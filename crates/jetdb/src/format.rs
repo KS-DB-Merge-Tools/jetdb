@@ -465,6 +465,14 @@ pub mod db_header {
     pub const PASSWORD_JET3: usize = 0x42;
 }
 
+/// MSysObjects flag-bit definitions.
+pub mod catalog_flags {
+    /// System object (0x80000000).
+    pub const SYSTEM: u32 = 0x8000_0000;
+    /// Hidden object (0x02).
+    pub const HIDDEN: u32 = 0x02;
+}
+
 /// Page number of the system catalog (MSysObjects).
 pub const CATALOG_PAGE: u32 = 2;
 
