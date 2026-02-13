@@ -2,8 +2,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use jetdb::format::{catalog_flags, JetVersion, ObjectType};
-use jetdb::{read_catalog, CatalogEntry, PageReader};
+use jetdb::format::{
+    catalog_flags, column_flags, index_flags, index_type, ColumnType, JetVersion, ObjectType,
+};
+use jetdb::{
+    read_catalog, read_relationships, read_table_def, relationship_flags, CatalogEntry, ColumnDef,
+    IndexColumnOrder, IndexDef, PageReader, Relationship, TableDef,
+};
 
 // ---------------------------------------------------------------------------
 // CLI definition
@@ -23,6 +28,8 @@ enum Commands {
     Ver(VerArgs),
     /// List table names
     Tables(TablesArgs),
+    /// Show table schema (columns, indexes, relationships)
+    Schema(SchemaArgs),
 }
 
 #[derive(Args)]
@@ -51,6 +58,24 @@ struct TablesArgs {
     /// Show object type name
     #[arg(short = 'T', long = "show-type-name", conflicts_with = "show_type")]
     show_type_name: bool,
+}
+
+#[derive(Args)]
+struct SchemaArgs {
+    /// Database file path (.mdb / .accdb)
+    file: PathBuf,
+
+    /// Show only the specified table
+    #[arg(short = 'T', long = "table")]
+    table_name: Option<String>,
+
+    /// Hide index definitions
+    #[arg(long = "no-indexes")]
+    no_indexes: bool,
+
+    /// Hide relationship definitions
+    #[arg(long = "no-relations")]
+    no_relations: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +185,259 @@ fn object_type_name(t: ObjectType) -> &'static str {
 }
 
 // ---------------------------------------------------------------------------
+// schema subcommand
+// ---------------------------------------------------------------------------
+
+fn cmd_schema(args: SchemaArgs) -> ExitCode {
+    match run_schema(&args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("jetdb: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open(&args.file)?;
+    let catalog = read_catalog(&mut reader)?;
+
+    // Collect target tables
+    let targets: Vec<&CatalogEntry> = if let Some(ref name) = args.table_name {
+        let entry = catalog
+            .iter()
+            .find(|e| e.object_type == ObjectType::Table && e.name == *name)
+            .ok_or(jetdb::FileError::TableNotFound {
+                name: name.clone(),
+            })?;
+        vec![entry]
+    } else {
+        catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table
+                    && (e.flags & (catalog_flags::SYSTEM | catalog_flags::HIDDEN)) == 0
+            })
+            .collect()
+    };
+
+    // Read relationships once if needed
+    let relationships = if args.no_relations {
+        Vec::new()
+    } else {
+        match read_relationships(&mut reader) {
+            Ok(rels) => rels,
+            Err(e) => {
+                eprintln!("jetdb: warning: failed to read relationships: {e}");
+                Vec::new()
+            }
+        }
+    };
+
+    let mut first = true;
+    for entry in &targets {
+        if !first {
+            println!();
+        }
+        first = false;
+
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)?;
+        print_table_schema(&tdef, &relationships, args);
+    }
+
+    Ok(())
+}
+
+fn format_col_type(col: &ColumnDef) -> String {
+    match col.col_type {
+        ColumnType::Text => format!("Text({})", col.col_size),
+        ColumnType::Binary => format!("Binary({})", col.col_size),
+        ColumnType::Numeric => format!("Numeric({},{})", col.precision, col.scale),
+        ColumnType::Memo => "Memo".to_string(),
+        ColumnType::Ole => "Ole".to_string(),
+        other => format!("{other}"),
+    }
+}
+
+fn format_col_attrs(col: &ColumnDef) -> String {
+    let mut attrs = Vec::new();
+    if (col.flags & column_flags::NULLABLE) == 0 {
+        attrs.push("NOT NULL");
+    }
+    if (col.flags & column_flags::AUTO_LONG) != 0 || (col.flags & column_flags::AUTO_UUID) != 0 {
+        attrs.push("AUTO");
+    }
+    attrs.join("  ")
+}
+
+fn print_table_schema(tdef: &TableDef, rels: &[Relationship], args: &SchemaArgs) {
+    println!("Table: {}", tdef.name);
+    println!();
+
+    // -- Columns --
+    println!("  Columns:");
+
+    // Pre-compute type strings to avoid double formatting
+    let col_types: Vec<String> = tdef.columns.iter().map(format_col_type).collect();
+    let name_width = tdef.columns.iter().map(|c| c.name.len()).max().unwrap_or(0);
+    let type_width = col_types.iter().map(|s| s.len()).max().unwrap_or(0);
+
+    for (col, col_type) in tdef.columns.iter().zip(&col_types) {
+        let attrs = format_col_attrs(col);
+        if attrs.is_empty() {
+            println!("    {:<nw$}  {col_type}", col.name, nw = name_width);
+        } else {
+            println!(
+                "    {:<nw$}  {:<tw$}  {attrs}",
+                col.name,
+                col_type,
+                nw = name_width,
+                tw = type_width,
+            );
+        }
+    }
+
+    // -- Indexes --
+    if !args.no_indexes {
+        let visible_indexes: Vec<&IndexDef> = tdef
+            .indexes
+            .iter()
+            .filter(|idx| idx.index_type != index_type::FOREIGN_KEY)
+            .collect();
+
+        if !visible_indexes.is_empty() {
+            println!();
+            println!("  Indexes:");
+
+            let idx_name_width = visible_indexes
+                .iter()
+                .map(|i| i.name.len())
+                .max()
+                .unwrap_or(0);
+            let cols_strs: Vec<String> = visible_indexes
+                .iter()
+                .map(|idx| format_index_columns(idx, tdef))
+                .collect();
+            let cols_width = cols_strs.iter().map(|s| s.len()).max().unwrap_or(0);
+
+            for (idx, cols_str) in visible_indexes.iter().zip(&cols_strs) {
+                let flags_str = format_index_flags(idx);
+                if flags_str.is_empty() {
+                    println!("    {:<w$}  {cols_str}", idx.name, w = idx_name_width);
+                } else {
+                    println!(
+                        "    {:<w$}  {:<cw$}  {flags_str}",
+                        idx.name,
+                        cols_str,
+                        w = idx_name_width,
+                        cw = cols_width,
+                    );
+                }
+            }
+        }
+    }
+
+    // -- Relationships --
+    if !args.no_relations {
+        let table_rels: Vec<&Relationship> = rels
+            .iter()
+            .filter(|r| r.from_table == tdef.name || r.to_table == tdef.name)
+            .collect();
+
+        if !table_rels.is_empty() {
+            println!();
+            println!("  Relationships:");
+
+            let rel_name_width = table_rels.iter().map(|r| r.name.len()).max().unwrap_or(0);
+
+            for rel in &table_rels {
+                let mapping = format_relationship_mapping(rel);
+                let flags_str = format_relationship_flags(rel);
+                if flags_str.is_empty() {
+                    println!("    {:<w$}  {mapping}", rel.name, w = rel_name_width);
+                } else {
+                    println!(
+                        "    {:<w$}  {mapping}  {flags_str}",
+                        rel.name,
+                        w = rel_name_width,
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn format_index_columns(idx: &IndexDef, tdef: &TableDef) -> String {
+    let parts: Vec<String> = idx
+        .columns
+        .iter()
+        .map(|ic| {
+            let col_name = tdef
+                .columns
+                .iter()
+                .find(|c| c.col_num == ic.col_num)
+                .map(|c| c.name.as_str())
+                .unwrap_or("?");
+            let order = match ic.order {
+                IndexColumnOrder::Ascending => "ASC",
+                IndexColumnOrder::Descending => "DESC",
+            };
+            format!("{col_name} {order}")
+        })
+        .collect();
+    format!("[{}]", parts.join(", "))
+}
+
+fn format_index_flags(idx: &IndexDef) -> String {
+    let mut flags = Vec::new();
+    if (idx.flags & index_flags::UNIQUE) != 0 {
+        flags.push("UNIQUE");
+    }
+    if (idx.flags & index_flags::IGNORE_NULLS) != 0 {
+        flags.push("IGNORE_NULLS");
+    }
+    if (idx.flags & index_flags::REQUIRED) != 0 {
+        flags.push("REQUIRED");
+    }
+    flags.join(" ")
+}
+
+fn format_relationship_mapping(rel: &Relationship) -> String {
+    let from_cols: Vec<&str> = rel.columns.iter().map(|c| c.from_column.as_str()).collect();
+    let to_cols: Vec<&str> = rel.columns.iter().map(|c| c.to_column.as_str()).collect();
+
+    if from_cols.len() == 1 {
+        format!(
+            "{}.{} -> {}.{}",
+            rel.from_table, from_cols[0], rel.to_table, to_cols[0]
+        )
+    } else {
+        let from = from_cols
+            .iter()
+            .map(|c| format!("{}.{c}", rel.from_table))
+            .collect::<Vec<_>>()
+            .join(",");
+        let to = to_cols
+            .iter()
+            .map(|c| format!("{}.{c}", rel.to_table))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("{from} -> {to}")
+    }
+}
+
+fn format_relationship_flags(rel: &Relationship) -> String {
+    let mut flags = Vec::new();
+    if (rel.flags & relationship_flags::CASCADE_UPDATE) != 0 {
+        flags.push("CASCADE UPDATE");
+    }
+    if (rel.flags & relationship_flags::CASCADE_DELETE) != 0 {
+        flags.push("CASCADE DELETE");
+    }
+    flags.join("  ")
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -168,6 +446,7 @@ fn main() -> ExitCode {
     match cli.command {
         Commands::Ver(args) => cmd_ver(args),
         Commands::Tables(args) => cmd_tables(args),
+        Commands::Schema(args) => cmd_schema(args),
     }
 }
 
@@ -274,5 +553,206 @@ mod tests {
         assert_eq!(object_type_name(ObjectType::Module), "module");
         assert_eq!(object_type_name(ObjectType::Relationship), "relationship");
         assert_eq!(object_type_name(ObjectType::DatabaseProperty), "dbproperty");
+    }
+
+    // -- schema helpers -------------------------------------------------------
+
+    fn col(
+        name: &str,
+        col_type: ColumnType,
+        col_size: u16,
+        flags: u8,
+        precision: u8,
+        scale: u8,
+    ) -> ColumnDef {
+        ColumnDef {
+            name: name.to_string(),
+            col_type,
+            col_num: 0,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size,
+            flags,
+            is_fixed: false,
+            precision,
+            scale,
+        }
+    }
+
+    // -- format_col_type tests ------------------------------------------------
+
+    #[test]
+    fn format_col_type_text() {
+        let c = col("x", ColumnType::Text, 100, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Text(100)");
+    }
+
+    #[test]
+    fn format_col_type_binary() {
+        let c = col("x", ColumnType::Binary, 50, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Binary(50)");
+    }
+
+    #[test]
+    fn format_col_type_numeric() {
+        let c = col("x", ColumnType::Numeric, 0, 0, 18, 2);
+        assert_eq!(format_col_type(&c), "Numeric(18,2)");
+    }
+
+    #[test]
+    fn format_col_type_memo() {
+        let c = col("x", ColumnType::Memo, 0, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Memo");
+    }
+
+    #[test]
+    fn format_col_type_ole() {
+        let c = col("x", ColumnType::Ole, 0, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Ole");
+    }
+
+    #[test]
+    fn format_col_type_long() {
+        let c = col("x", ColumnType::Long, 0, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Long");
+    }
+
+    #[test]
+    fn format_col_type_double() {
+        let c = col("x", ColumnType::Double, 0, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Double");
+    }
+
+    #[test]
+    fn format_col_type_timestamp() {
+        let c = col("x", ColumnType::Timestamp, 0, 0, 0, 0);
+        assert_eq!(format_col_type(&c), "Timestamp");
+    }
+
+    // -- format_col_attrs tests -----------------------------------------------
+
+    #[test]
+    fn format_col_attrs_not_null() {
+        // FIXED only (NULLABLE bit not set) → "NOT NULL"
+        let c = col("x", ColumnType::Long, 0, column_flags::FIXED, 0, 0);
+        assert_eq!(format_col_attrs(&c), "NOT NULL");
+    }
+
+    #[test]
+    fn format_col_attrs_auto_long() {
+        let c = col(
+            "x",
+            ColumnType::Long,
+            0,
+            column_flags::NULLABLE | column_flags::AUTO_LONG,
+            0,
+            0,
+        );
+        assert!(format_col_attrs(&c).contains("AUTO"));
+    }
+
+    #[test]
+    fn format_col_attrs_auto_uuid() {
+        let c = col(
+            "x",
+            ColumnType::Long,
+            0,
+            column_flags::NULLABLE | column_flags::AUTO_UUID,
+            0,
+            0,
+        );
+        assert!(format_col_attrs(&c).contains("AUTO"));
+    }
+
+    #[test]
+    fn format_col_attrs_nullable() {
+        let c = col("x", ColumnType::Long, 0, column_flags::NULLABLE, 0, 0);
+        assert_eq!(format_col_attrs(&c), "");
+    }
+
+    #[test]
+    fn format_col_attrs_not_null_auto() {
+        let c = col(
+            "x",
+            ColumnType::Long,
+            0,
+            column_flags::FIXED | column_flags::AUTO_LONG,
+            0,
+            0,
+        );
+        assert_eq!(format_col_attrs(&c), "NOT NULL  AUTO");
+    }
+
+    // -- format_index_flags tests ---------------------------------------------
+
+    #[test]
+    fn format_index_flags_empty() {
+        let idx = IndexDef {
+            name: "idx".to_string(),
+            index_num: 0,
+            index_type: 1,
+            columns: vec![],
+            flags: 0,
+            first_data_page: 0,
+            foreign_key: None,
+        };
+        assert_eq!(format_index_flags(&idx), "");
+    }
+
+    #[test]
+    fn format_index_flags_unique() {
+        let idx = IndexDef {
+            name: "idx".to_string(),
+            index_num: 0,
+            index_type: 1,
+            columns: vec![],
+            flags: index_flags::UNIQUE,
+            first_data_page: 0,
+            foreign_key: None,
+        };
+        assert_eq!(format_index_flags(&idx), "UNIQUE");
+    }
+
+    #[test]
+    fn format_index_flags_all() {
+        let idx = IndexDef {
+            name: "idx".to_string(),
+            index_num: 0,
+            index_type: 1,
+            columns: vec![],
+            flags: index_flags::UNIQUE | index_flags::IGNORE_NULLS | index_flags::REQUIRED,
+            first_data_page: 0,
+            foreign_key: None,
+        };
+        assert_eq!(format_index_flags(&idx), "UNIQUE IGNORE_NULLS REQUIRED");
+    }
+
+    // -- format_relationship_flags tests --------------------------------------
+
+    #[test]
+    fn format_relationship_flags_empty() {
+        let rel = Relationship {
+            name: "r".to_string(),
+            from_table: "A".to_string(),
+            to_table: "B".to_string(),
+            columns: vec![],
+            flags: 0,
+        };
+        assert_eq!(format_relationship_flags(&rel), "");
+    }
+
+    #[test]
+    fn format_relationship_flags_cascade() {
+        let rel = Relationship {
+            name: "r".to_string(),
+            from_table: "A".to_string(),
+            to_table: "B".to_string(),
+            columns: vec![],
+            flags: relationship_flags::CASCADE_UPDATE | relationship_flags::CASCADE_DELETE,
+        };
+        assert_eq!(
+            format_relationship_flags(&rel),
+            "CASCADE UPDATE  CASCADE DELETE"
+        );
     }
 }
