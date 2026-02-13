@@ -360,3 +360,281 @@ fn schema_ace12() {
         "should contain Columns section for ACE12 file, got:\n{stdout}"
     );
 }
+
+// ===========================================================================
+// DDL output tests
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// --ddl sqlite basic
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_sqlite_basic() {
+    let path = skip_if_missing!("V2003/testV2003.mdb");
+    let output = jetdb_bin()
+        .args(["schema", path.to_str().unwrap(), "--ddl", "sqlite"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("CREATE TABLE"),
+        "should contain CREATE TABLE, got:\n{stdout}"
+    );
+    // SQLite types
+    assert!(
+        stdout.contains("TEXT") || stdout.contains("INTEGER"),
+        "should contain SQLite types, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl sqlite single table (-T)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_sqlite_single_table() {
+    let path = skip_if_missing!("V2003/testV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "sqlite",
+            "-T",
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"Table1\""),
+        "should contain quoted Table1, got:\n{stdout}"
+    );
+    // Should contain only one CREATE TABLE
+    assert_eq!(
+        stdout.matches("CREATE TABLE").count(),
+        1,
+        "should have exactly one CREATE TABLE, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl postgres types
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_postgres_types() {
+    let path = skip_if_missing!("V2003/testV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "postgres",
+            "-T",
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Table1 has Text columns -> VARCHAR
+    assert!(
+        stdout.contains("VARCHAR"),
+        "should contain VARCHAR for text columns, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl mysql backtick quoting
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_mysql_backtick() {
+    let path = skip_if_missing!("V2003/testV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "mysql",
+            "-T",
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("`Table1`"),
+        "should use backtick quoting, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl access types
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_access_types() {
+    let path = skip_if_missing!("V2003/testV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "access",
+            "-T",
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("[Table1]"),
+        "should use bracket quoting, got:\n{stdout}"
+    );
+    // Table1 has Text columns -> TEXT(n) in Access
+    assert!(
+        stdout.contains("TEXT("),
+        "should contain TEXT(n) for text columns, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl sqlite --no-indexes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_no_indexes() {
+    let path = skip_if_missing!("V2003/testV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "sqlite",
+            "--no-indexes",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("CREATE INDEX") && !stdout.contains("CREATE UNIQUE INDEX"),
+        "should not contain CREATE INDEX with --no-indexes, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl postgres --no-relations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_no_relations() {
+    let path = skip_if_missing!("V2003/indexTestV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "postgres",
+            "--no-relations",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("FOREIGN KEY"),
+        "should not contain FOREIGN KEY with --no-relations, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl postgres with relationships (ALTER TABLE FK)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_with_relationships() {
+    let path = skip_if_missing!("V2003/indexTestV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "postgres",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("ALTER TABLE"),
+        "should contain ALTER TABLE for FK, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("FOREIGN KEY"),
+        "should contain FOREIGN KEY, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl sqlite with relationships (inline FK)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_sqlite_inline_fk() {
+    let path = skip_if_missing!("V2003/indexTestV2003.mdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "sqlite",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // SQLite should have inline FOREIGN KEY inside CREATE TABLE
+    assert!(
+        stdout.contains("FOREIGN KEY"),
+        "should contain inline FOREIGN KEY for SQLite, got:\n{stdout}"
+    );
+    // Should NOT have ALTER TABLE
+    assert!(
+        !stdout.contains("ALTER TABLE"),
+        "SQLite should not use ALTER TABLE for FK, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// --ddl sqlite with ACE12 (V2007) file
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ddl_ace12() {
+    let path = skip_if_missing!("V2007/testV2007.accdb");
+    let output = jetdb_bin()
+        .args([
+            "schema",
+            path.to_str().unwrap(),
+            "--ddl",
+            "sqlite",
+            "-T",
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("CREATE TABLE"),
+        "should contain CREATE TABLE for ACE12, got:\n{stdout}"
+    );
+}

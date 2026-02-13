@@ -1,3 +1,5 @@
+mod ddl;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -68,6 +70,10 @@ struct SchemaArgs {
     /// Show only the specified table
     #[arg(short = 'T', long = "table")]
     table_name: Option<String>,
+
+    /// Generate DDL in the specified SQL dialect
+    #[arg(long = "ddl", value_enum)]
+    ddl_format: Option<ddl::DdlFormat>,
 
     /// Hide index definitions
     #[arg(long = "no-indexes")]
@@ -222,9 +228,8 @@ fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
     };
 
     // Read relationships once if needed
-    let relationships = if args.no_relations {
-        Vec::new()
-    } else {
+    let need_relations = !args.no_relations;
+    let relationships = if need_relations {
         match read_relationships(&mut reader) {
             Ok(rels) => rels,
             Err(e) => {
@@ -232,17 +237,37 @@ fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
                 Vec::new()
             }
         }
+    } else {
+        Vec::new()
     };
 
-    let mut first = true;
+    // Read all target table definitions
+    let mut tables: Vec<TableDef> = Vec::new();
     for entry in &targets {
-        if !first {
-            println!();
-        }
-        first = false;
-
         let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)?;
-        print_table_schema(&tdef, &relationships, args);
+        tables.push(tdef);
+    }
+
+    // DDL mode or human-readable mode
+    if let Some(format) = args.ddl_format {
+        let dialect = ddl::create_dialect(format);
+        let output = ddl::generate_ddl(
+            &*dialect,
+            &tables,
+            &relationships,
+            !args.no_indexes,
+            need_relations,
+        );
+        print!("{output}");
+    } else {
+        let mut first = true;
+        for tdef in &tables {
+            if !first {
+                println!();
+            }
+            first = false;
+            print_table_schema(tdef, &relationships, args);
+        }
     }
 
     Ok(())
