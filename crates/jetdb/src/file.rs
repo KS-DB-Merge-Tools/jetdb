@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::format::{db_header, FormatError, JetFormat, JetVersion};
+use crate::format::{db_header, row, FormatError, JetFormat, JetVersion};
 
 // ---------------------------------------------------------------------------
 // FileError
@@ -16,6 +16,9 @@ pub enum FileError {
     Format(FormatError),
     FileTooSmall { expected: usize, actual: u64 },
     PageOutOfRange { page: u32, max_page: u32 },
+    InvalidRow { page: u32, row: u16, reason: &'static str },
+    InvalidUsageMap { reason: &'static str },
+    InvalidTableDef { reason: &'static str },
 }
 
 impl fmt::Display for FileError {
@@ -31,6 +34,15 @@ impl fmt::Display for FileError {
             }
             Self::PageOutOfRange { page, max_page } => {
                 write!(f, "page {page} out of range (max page: {max_page})")
+            }
+            Self::InvalidRow { page, row, reason } => {
+                write!(f, "invalid row {row} on page {page}: {reason}")
+            }
+            Self::InvalidUsageMap { reason } => {
+                write!(f, "invalid usage map: {reason}")
+            }
+            Self::InvalidTableDef { reason } => {
+                write!(f, "invalid table definition: {reason}")
             }
         }
     }
@@ -121,6 +133,68 @@ pub struct DbHeader {
     pub db_key: u32,
     pub lang_id: u16,
     pub code_page: u16,
+}
+
+// ---------------------------------------------------------------------------
+// find_row — locate a row within a data page
+// ---------------------------------------------------------------------------
+
+/// Return the `(start, size)` of a row on a data page.
+///
+/// The row offset table begins at `data_row_count_pos + 2` in the page.
+/// Each entry is 2 bytes LE; the flag bits are masked off with `row::OFFSET_MASK`.
+/// For row 0 the upper bound is the page size; for row > 0 it is the previous
+/// row's offset.
+pub fn find_row(format: &JetFormat, page_data: &[u8], page: u32, row: u16) -> Result<(usize, usize), FileError> {
+    let row_count_pos = format.data_row_count_pos;
+    if page_data.len() < row_count_pos + 2 {
+        return Err(FileError::InvalidRow {
+            page,
+            row,
+            reason: "page too small for row count",
+        });
+    }
+    let num_rows = u16::from_le_bytes([page_data[row_count_pos], page_data[row_count_pos + 1]]);
+    if row >= num_rows {
+        return Err(FileError::InvalidRow {
+            page,
+            row,
+            reason: "row index exceeds row count",
+        });
+    }
+
+    let table_start = row_count_pos + 2;
+
+    // Read offset for the requested row
+    let entry_pos = table_start + (row as usize) * 2;
+    if entry_pos + 2 > page_data.len() {
+        return Err(FileError::InvalidRow {
+            page,
+            row,
+            reason: "row offset table overflow",
+        });
+    }
+    let row_start = u16::from_le_bytes([page_data[entry_pos], page_data[entry_pos + 1]])
+        & row::OFFSET_MASK;
+
+    let row_end = if row == 0 {
+        format.page_size as u16
+    } else {
+        let prev_pos = table_start + ((row as usize) - 1) * 2;
+        u16::from_le_bytes([page_data[prev_pos], page_data[prev_pos + 1]]) & row::OFFSET_MASK
+    };
+
+    if row_start >= row_end || row_end as usize > page_data.len() {
+        return Err(FileError::InvalidRow {
+            page,
+            row,
+            reason: "invalid row offsets",
+        });
+    }
+
+    let start = row_start as usize;
+    let size = (row_end - row_start) as usize;
+    Ok((start, size))
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +339,28 @@ impl PageReader {
 
         self.cached_page = Some(page);
         Ok(&self.page_buf)
+    }
+
+    /// Read and decrypt a page, returning an owned copy of the data.
+    ///
+    /// Unlike `read_page`, the returned `Vec<u8>` is independent of `self`,
+    /// so multiple pages can be held simultaneously.
+    pub fn read_page_copy(&mut self, page: u32) -> Result<Vec<u8>, FileError> {
+        self.read_page(page).map(|s| s.to_vec())
+    }
+
+    /// Read a row from a page using a pg_row pointer.
+    ///
+    /// A pg_row value encodes the page number in the upper 3 bytes and the
+    /// row index in the lowest byte: `page = pg_row >> 8`, `row = pg_row & 0xFF`.
+    pub fn read_pg_row(&mut self, pg_row: u32) -> Result<Vec<u8>, FileError> {
+        let page_num = pg_row >> 8;
+        let row_num = (pg_row & 0xFF) as u16;
+
+        let page_data = self.read_page_copy(page_num)?;
+        let (start, size) = find_row(self.header.format, &page_data, page_num, row_num)?;
+
+        Ok(page_data[start..start + size].to_vec())
     }
 }
 

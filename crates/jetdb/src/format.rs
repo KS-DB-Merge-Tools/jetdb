@@ -11,6 +11,7 @@ pub enum FormatError {
     UnknownPageType(u8),
     UnknownColumnType(u8),
     UnknownObjectType(i32),
+    InvalidEncoding,
 }
 
 impl fmt::Display for FormatError {
@@ -20,6 +21,7 @@ impl fmt::Display for FormatError {
             Self::UnknownPageType(v) => write!(f, "unknown page type byte: 0x{v:02X}"),
             Self::UnknownColumnType(v) => write!(f, "unknown column type byte: 0x{v:02X}"),
             Self::UnknownObjectType(v) => write!(f, "unknown object type value: {v}"),
+            Self::InvalidEncoding => write!(f, "invalid text encoding"),
         }
     }
 }
@@ -174,7 +176,7 @@ pub struct JetFormat {
 /// Format constants for the Jet 3 engine (Access 97, page size 2048).
 pub static JET3: JetFormat = JetFormat {
     page_size: 2048,
-    data_row_count_pos: 12,
+    data_row_count_pos: 8,
     tdef_row_count_pos: 12,
     tdef_column_count_pos: 25,
     tdef_index_count_pos: 27,
@@ -185,8 +187,8 @@ pub static JET3: JetFormat = JetFormat {
     tdef_free_pages_pos: 39,
     tdef_index_entry_span: 8,
     tdef_column_entry_span: 18,
-    coldef_number_pos: 5,
-    coldef_length_pos: 11,
+    coldef_number_pos: 1,
+    coldef_length_pos: 16,
     coldef_flags_pos: 13,
     coldef_var_col_index_pos: 3,
     coldef_fixed_data_pos: 14,
@@ -198,7 +200,7 @@ pub static JET3: JetFormat = JetFormat {
 /// Format constants for the Jet 4 / ACE engine (Access 2000+, page size 4096).
 pub static JET4: JetFormat = JetFormat {
     page_size: 4096,
-    data_row_count_pos: 16,
+    data_row_count_pos: 12,
     tdef_row_count_pos: 16,
     tdef_column_count_pos: 45,
     tdef_index_count_pos: 47,
@@ -210,7 +212,7 @@ pub static JET4: JetFormat = JetFormat {
     tdef_index_entry_span: 12,
     tdef_column_entry_span: 25,
     coldef_number_pos: 5,
-    coldef_length_pos: 16,
+    coldef_length_pos: 23,
     coldef_flags_pos: 15,
     coldef_var_col_index_pos: 7,
     coldef_fixed_data_pos: 21,
@@ -460,7 +462,7 @@ pub mod db_header {
 }
 
 /// Page number of the system catalog (MSysObjects).
-pub const CATALOG_PAGE: u32 = 18;
+pub const CATALOG_PAGE: u32 = 2;
 
 /// Maximum length of an object name.
 pub const MAX_OBJECT_NAME: usize = 256;
@@ -680,5 +682,8 @@ mod tests {
 
         let e = FormatError::UnknownObjectType(99);
         assert_eq!(e.to_string(), "unknown object type value: 99");
+
+        let e = FormatError::InvalidEncoding;
+        assert_eq!(e.to_string(), "invalid text encoding");
     }
 }
