@@ -154,6 +154,22 @@ pub struct JetFormat {
     /// Byte span of one column entry in TDEF.
     pub tdef_column_entry_span: usize,
 
+    // -- Index definitions (TDEF sections [5][6]) ----------------------------
+    /// Byte span of one index-column definition entry (section [5]).
+    pub idx_col_block_size: usize,
+    /// Byte span of one logical index definition entry (section [6]).
+    pub idx_info_block_size: usize,
+    /// Bytes to skip at the start of each section [5] entry (type marker).
+    pub idx_col_skip_before: usize,
+    /// Bytes to skip before the flags field in section [5].
+    pub idx_col_skip_before_flags: usize,
+    /// Bytes to skip after the flags field in section [5].
+    pub idx_col_skip_after_flags: usize,
+    /// Bytes to skip at the start of each section [6] entry (type marker).
+    pub idx_info_skip_before: usize,
+    /// Byte offset of the index_type field within a section [6] entry.
+    pub idx_info_type_offset: usize,
+
     // -- Column entry fields -------------------------------------------------
     /// Position of the column-number field within a column entry.
     pub coldef_number_pos: usize,
@@ -190,6 +206,16 @@ pub static JET3: JetFormat = JetFormat {
     tdef_free_pages_pos: 39,
     tdef_index_entry_span: 8,
     tdef_column_entry_span: 18,
+    idx_col_block_size: 39,
+    idx_info_block_size: 20,
+    idx_col_skip_before: 0,
+    idx_col_skip_before_flags: 0,
+    idx_col_skip_after_flags: 0,
+    // Jet3 has no type marker at the start of section [6] entries (see HACKING.md).
+    // Note: offset 4 (index_col_def_num) is used instead of 0 (index_num),
+    // which works because these values are normally identical.
+    idx_info_skip_before: 0,
+    idx_info_type_offset: 19,
     coldef_number_pos: 1,
     coldef_length_pos: 16,
     coldef_flags_pos: 13,
@@ -215,6 +241,13 @@ pub static JET4: JetFormat = JetFormat {
     tdef_free_pages_pos: 59,
     tdef_index_entry_span: 12,
     tdef_column_entry_span: 25,
+    idx_col_block_size: 52,
+    idx_info_block_size: 28,
+    idx_col_skip_before: 4,
+    idx_col_skip_before_flags: 4,
+    idx_col_skip_after_flags: 5,
+    idx_info_skip_before: 4,
+    idx_info_type_offset: 23,
     coldef_number_pos: 5,
     coldef_length_pos: 23,
     coldef_flags_pos: 15,
@@ -471,6 +504,24 @@ pub mod catalog_flags {
     pub const SYSTEM: u32 = 0x8000_0000;
     /// Hidden object (0x02).
     pub const HIDDEN: u32 = 0x02;
+}
+
+/// Index flags (section [5] flags field in TDEF).
+pub mod index_flags {
+    /// Unique index.
+    pub const UNIQUE: u8 = 0x01;
+    /// Ignore NULL values.
+    pub const IGNORE_NULLS: u8 = 0x02;
+    /// Required index (all columns must be non-NULL).
+    pub const REQUIRED: u8 = 0x08;
+}
+
+/// Index type (section [6] index_type field in TDEF).
+pub mod index_type {
+    /// Normal index or PRIMARY KEY.
+    pub const NORMAL: u8 = 0x01;
+    /// Foreign key reference (no physical B-tree index).
+    pub const FOREIGN_KEY: u8 = 0x02;
 }
 
 /// Page number of the system catalog (MSysObjects).
