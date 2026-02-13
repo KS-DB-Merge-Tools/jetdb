@@ -18,6 +18,10 @@ pub struct ColumnDef {
     pub col_size: u16,
     pub flags: u8,
     pub is_fixed: bool,
+    /// Scale for Numeric columns (number of decimal places).
+    pub scale: u8,
+    /// Precision for Numeric columns.
+    pub precision: u8,
 }
 
 /// A parsed table definition.
@@ -120,6 +124,9 @@ pub fn read_table_def(
             col[format.coldef_length_pos + 1],
         ]);
 
+        let scale = col[format.coldef_scale_pos];
+        let precision = col[format.coldef_precision_pos];
+
         columns.push(ColumnDef {
             name: String::new(), // filled in step 3e
             col_type,
@@ -129,6 +136,8 @@ pub fn read_table_def(
             col_size,
             flags,
             is_fixed,
+            scale,
+            precision,
         });
     }
 
