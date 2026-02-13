@@ -1,6 +1,8 @@
+pub mod encoding;
 pub mod file;
 pub mod format;
 pub mod map;
+pub mod table;
 
 pub use file::{find_row, DbHeader, FileError, PageReader};
 pub use format::{

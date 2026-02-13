@@ -133,6 +133,8 @@ pub struct JetFormat {
     // -- Table definition (TDEF) page ----------------------------------------
     /// Position of the "number of rows" field in TDEF.
     pub tdef_row_count_pos: usize,
+    /// Position of the "number of variable columns" field in TDEF.
+    pub tdef_var_col_count_pos: usize,
     /// Position of the "number of columns" field in TDEF.
     pub tdef_column_count_pos: usize,
     /// Position of the "number of indexes" field in TDEF.
@@ -178,6 +180,7 @@ pub static JET3: JetFormat = JetFormat {
     page_size: 2048,
     data_row_count_pos: 8,
     tdef_row_count_pos: 12,
+    tdef_var_col_count_pos: 23,
     tdef_column_count_pos: 25,
     tdef_index_count_pos: 27,
     tdef_real_index_count_pos: 31,
@@ -202,6 +205,7 @@ pub static JET4: JetFormat = JetFormat {
     page_size: 4096,
     data_row_count_pos: 12,
     tdef_row_count_pos: 16,
+    tdef_var_col_count_pos: 43,
     tdef_column_count_pos: 45,
     tdef_index_count_pos: 47,
     tdef_real_index_count_pos: 51,
