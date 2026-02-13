@@ -1,28 +1,28 @@
 # jetdb CLI
 
-A read-only command-line tool for Microsoft Access database files (.mdb / .accdb).
+Microsoft Access データベース (.mdb / .accdb) の読み取り専用コマンドラインツール。
 
-## Installation
+## インストール
 
 ```bash
 cargo install --path crates/jetdb-cli
 ```
 
-## Subcommands
+## サブコマンド
 
-### ver — Show database engine version
+### ver — データベースエンジンバージョンの表示
 
 ```
 jetdb ver [OPTIONS] <FILE>
 ```
 
-Display the Jet/ACE engine version of the database file.
+データベースファイルの Jet/ACE エンジンバージョンを表示する。
 
-#### Options
+#### オプション
 
-- `-l`, `--long` — Show detailed version information
+- `-l`, `--long` — 詳細なバージョン情報を表示
 
-#### Output examples
+#### 出力例
 
 ```
 $ jetdb ver testV2003.mdb
@@ -32,34 +32,34 @@ $ jetdb ver -l testV2003.mdb
 Jet4 (Access 2000/2003)
 ```
 
-#### Version list
+#### バージョン一覧
 
-Short name   Details
-JET3         Jet3 (Access 97)
-JET4         Jet4 (Access 2000/2003)
-ACE12        ACE12 (Access 2007)
-ACE14        ACE14 (Access 2010)
-ACE15        ACE15 (Access 2013)
-ACE16        ACE16 (Access 2016)
-ACE17        ACE17 (Access 2019)
+短縮名   詳細
+JET3    Jet3 (Access 97)
+JET4    Jet4 (Access 2000/2003)
+ACE12   ACE12 (Access 2007)
+ACE14   ACE14 (Access 2010)
+ACE15   ACE15 (Access 2013)
+ACE16   ACE16 (Access 2016)
+ACE17   ACE17 (Access 2019)
 
-### tables — List tables
+### tables — テーブル一覧の表示
 
 ```
 jetdb tables [OPTIONS] <FILE>
 ```
 
-Output the table names in the database, one per line.
+データベースに含まれるテーブル名を1行1テーブルで出力する。
 
-#### Options
+#### オプション
 
-- `-s`, `--system` — Include system tables (those with SYSTEM/HIDDEN flags)
-- `-t`, `--show-type` — Prefix each line with the type number (tab-separated)
-- `-T`, `--show-type-name` — Prefix each line with the type name (tab-separated)
+- `-s`, `--system` — システムテーブル (SYSTEM/HIDDEN フラグ付き) を含める
+- `-t`, `--show-type` — 種別番号をタブ区切りで前置表示
+- `-T`, `--show-type-name` — 種別名をタブ区切りで前置表示
 
-`-t` and `-T` are mutually exclusive (cannot be used together).
+`-t` と `-T` は排他 (同時指定不可)。
 
-#### Output examples
+#### 出力例
 
 ```
 $ jetdb tables test.mdb
@@ -87,31 +87,31 @@ table	Table1
 table	Table2
 ```
 
-#### Type names
+#### 種別名
 
-Type names displayed with -T:
+-T で表示される種別名:
 
-Name          Condition
-table         Regular user table
-systable      Table with SYSTEM or HIDDEN flag
+名前          条件
+table        通常のユーザーテーブル
+systable     SYSTEM または HIDDEN フラグ付きテーブル
 
-### schema — Show table schema
+### schema — テーブルスキーマの表示
 
 ```
 jetdb schema [OPTIONS] <FILE>
 ```
 
-Display column definitions, indexes, and relationships of tables.
-When the `--ddl` option is specified, output as SQL DDL (CREATE TABLE, etc.).
+テーブルのカラム定義・インデックス・リレーションシップを表示する。
+`--ddl` オプション指定時は SQL の DDL (CREATE TABLE 等) として出力する。
 
-#### Options
+#### オプション
 
-- `-T`, `--table <NAME>` — Show only the specified table
-- `--ddl <DIALECT>` — Output as DDL in the specified dialect (sqlite, postgres, mysql, access)
-- `--no-indexes` — Omit index definitions
-- `--no-relations` — Omit relationship definitions
+- `-T`, `--table <NAME>` — 指定テーブルのみ表示
+- `--ddl <DIALECT>` — 指定方言の DDL として出力 (sqlite, postgres, mysql, access)
+- `--no-indexes` — インデックス定義を省略
+- `--no-relations` — リレーションシップ定義を省略
 
-#### Output examples
+#### 出力例
 
 ```
 $ jetdb schema test.mdb -T Table1
@@ -184,9 +184,9 @@ ALTER TABLE "Table1" ADD CONSTRAINT "Table3Table1"
     ON UPDATE CASCADE;
 ```
 
-#### DDL dialect list
+#### DDL 方言一覧
 
-Name       Description
+名前       説明
 sqlite     SQLite
 postgres   PostgreSQL
 mysql      MySQL
