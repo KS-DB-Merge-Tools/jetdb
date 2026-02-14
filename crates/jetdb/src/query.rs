@@ -310,7 +310,7 @@ pub fn query_to_sql(qdef: &QueryDef) -> String {
 // Row access helpers
 // ---------------------------------------------------------------------------
 
-fn rows_by_attr<'a>(rows: &'a [QueryRow], attr: u8) -> Vec<&'a QueryRow> {
+fn rows_by_attr(rows: &[QueryRow], attr: u8) -> Vec<&QueryRow> {
     rows.iter().filter(|r| r.attribute == attr).collect()
 }
 

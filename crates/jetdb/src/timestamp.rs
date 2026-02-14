@@ -4,7 +4,6 @@
 /// floating-point numbers representing fractional days since the epoch
 /// 1899-12-30 00:00:00.  The integer part is the day count and the
 /// fractional part is the time of day.
-
 /// Access epoch expressed as Julian Day Number (1899-12-30).
 const ACCESS_EPOCH_JDN: i64 = 2_415_019;
 

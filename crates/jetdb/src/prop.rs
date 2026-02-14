@@ -171,7 +171,7 @@ pub(crate) fn parse_lvprop(data: &[u8], is_jet3: bool) -> Result<Vec<PropertyMap
             CHUNK_NAME_LIST => {
                 names = parse_name_list(chunk_data, is_jet3)?;
             }
-            0x0000 | 0x0001 | 0x0002 => {
+            0x0000..=0x0002 => {
                 let map = parse_value_chunk(chunk_data, chunk_type, &names, is_jet3)?;
                 maps.push(map);
             }
@@ -202,7 +202,7 @@ fn parse_name_list(chunk_data: &[u8], is_jet3: bool) -> Result<Vec<String>, File
         let name = if is_jet3 {
             encoding::decode_latin1(name_bytes)
         } else {
-            encoding::decode_utf16le(name_bytes).map_err(|e| FileError::Format(e))?
+            encoding::decode_utf16le(name_bytes).map_err(FileError::Format)?
         };
         names.push(name);
         pos += name_len;

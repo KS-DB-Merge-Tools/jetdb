@@ -526,7 +526,7 @@ fn read_variable_value(
         ColumnType::Memo => read_memo_value(var_data, is_jet3, Some(reader)),
         ColumnType::Ole => read_ole_value(var_data, Some(reader)),
         // Fixed-size types sometimes stored as variable-length (e.g. system tables)
-        ColumnType::Byte if var_data.len() >= 1 => Value::Byte(var_data[0]),
+        ColumnType::Byte if !var_data.is_empty() => Value::Byte(var_data[0]),
         ColumnType::Int if var_data.len() >= 2 => {
             Value::Int(i16::from_le_bytes([var_data[0], var_data[1]]))
         }
