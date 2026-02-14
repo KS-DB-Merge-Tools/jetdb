@@ -1,5 +1,6 @@
 mod ddl;
 mod export;
+mod prop;
 mod query;
 
 use std::path::PathBuf;
@@ -38,6 +39,8 @@ enum Commands {
     Export(export::ExportArgs),
     /// Manage saved queries (list / show)
     Queries(query::QueryArgs),
+    /// Show object properties (LvProp)
+    Prop(prop::PropArgs),
 }
 
 #[derive(Args)]
@@ -480,6 +483,7 @@ fn main() -> ExitCode {
         Commands::Schema(args) => cmd_schema(args),
         Commands::Export(args) => export::cmd_export(args),
         Commands::Queries(args) => query::cmd_queries(args),
+        Commands::Prop(args) => prop::cmd_prop(args),
     }
 }
 

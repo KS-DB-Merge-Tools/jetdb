@@ -645,7 +645,7 @@ fn read_ole_value(var_data: &[u8], reader: Option<&mut PageReader>) -> Value {
 /// The byte order follows the standard UUID mixed-endian layout:
 /// `{AABBCCDD-EEFF-GGHH-IIJJ-KKLLMMNNOOPP}` where the first three groups
 /// are byte-swapped.
-fn format_guid(b: &[u8]) -> String {
+pub(crate) fn format_guid(b: &[u8]) -> String {
     format!(
         "{{{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
         b[3], b[2], b[1], b[0],   // 4-byte swap

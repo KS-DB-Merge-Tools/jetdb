@@ -6,6 +6,7 @@ pub mod file;
 pub mod format;
 pub mod map;
 pub mod money;
+pub mod prop;
 pub mod query;
 pub mod relationship;
 pub mod table;
@@ -24,4 +25,5 @@ pub use table::{
 };
 
 pub use data::{read_table_rows, ReadResult, Value};
+pub use prop::{read_object_properties, ObjectProperties, PropMapType, Property, PropertyMap};
 pub use query::{query_to_sql, read_queries, QueryDef, QueryType};

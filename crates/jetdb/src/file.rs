@@ -19,6 +19,7 @@ pub enum FileError {
     InvalidRow { page: u32, row: u16, reason: &'static str },
     InvalidUsageMap { reason: &'static str },
     InvalidTableDef { reason: &'static str },
+    InvalidProperty { reason: &'static str },
     TableNotFound { name: String },
     QueryNotFound { name: String },
 }
@@ -45,6 +46,9 @@ impl fmt::Display for FileError {
             }
             Self::InvalidTableDef { reason } => {
                 write!(f, "invalid table definition: {reason}")
+            }
+            Self::InvalidProperty { reason } => {
+                write!(f, "invalid property data: {reason}")
             }
             Self::TableNotFound { name } => write!(f, "table not found: {name}"),
             Self::QueryNotFound { name } => write!(f, "query not found: {name}"),
