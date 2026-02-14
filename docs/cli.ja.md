@@ -191,3 +191,49 @@ sqlite     SQLite
 postgres   PostgreSQL
 mysql      MySQL
 access     Access SQL
+
+### export — テーブルデータの CSV エクスポート
+
+```
+jetdb export [OPTIONS] <FILE> <TABLE>
+```
+
+テーブルの全行を RFC 4180 準拠の CSV として標準出力に出力する。
+デフォルトではレプリケーション用システムカラムは除外される。
+
+#### オプション
+
+- `-H`, `--no-header` — ヘッダー行を省略
+- `-d`, `--delimiter <CHAR>` — カラム区切り文字 (デフォルト: `,`)
+- `-D`, `--date-format <FMT>` — 日付フォーマット、strftime サブセット (デフォルト: `%Y-%m-%d`)
+- `-T`, `--datetime-format <FMT>` — 日時フォーマット、strftime サブセット (デフォルト: `%Y-%m-%d %H:%M:%S`)
+- `-b`, `--bin <MODE>` — バイナリ出力モード (デフォルト: `hex`)
+- `-0`, `--null <STRING>` — NULL 値の表現文字列 (デフォルト: 空文字列)
+- `-B`, `--boolean-words` — 真偽値を 1/0 ではなく TRUE/FALSE で出力
+- `-s`, `--system-columns` — レプリケーション用システムカラムを含める
+
+#### 出力例
+
+```
+$ jetdb export test.mdb Table1
+A,B,C,D,E,F,G,H,I
+"foo","bar",1,2,3,1.5,2003-01-02,"12.3400",1
+
+$ jetdb export test.mdb Table1 -H
+"foo","bar",1,2,3,1.5,2003-01-02,"12.3400",1
+
+$ jetdb export test.mdb Table1 -d "\t"
+A	B	C	D	E	F	G	H	I
+
+$ jetdb export test.mdb Table1 -B
+A,B,C,D,E,F,G,H,I
+"foo","bar",1,2,3,1.5,2003-01-02,"12.3400",TRUE
+```
+
+#### バイナリ出力モード一覧
+
+名前     説明
+strip    バイナリデータを省略 (空文字列)
+raw      生バイトとして出力 (UTF-8 lossy)
+octal    各バイトを \NNN 形式の8進エスケープ
+hex      各バイトを小文字16進数で連結 (デフォルト)

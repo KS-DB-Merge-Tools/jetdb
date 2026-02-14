@@ -7,6 +7,7 @@ pub mod map;
 pub mod money;
 pub mod relationship;
 pub mod table;
+pub mod timestamp;
 
 pub use catalog::{read_catalog, table_names, CatalogEntry};
 pub use file::{find_row, DbHeader, FileError, PageReader};
@@ -19,3 +20,5 @@ pub use table::{
     read_table_def, ColumnDef, ForeignKeyReference, IndexColumn, IndexColumnOrder, IndexDef,
     TableDef,
 };
+
+pub use data::{read_table_rows, ReadResult, Value};
