@@ -3,6 +3,11 @@ name = "jetdb-cli"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "CLI tool for reading Microsoft Access (.mdb/.accdb) files"
+repository = "https://github.com/dominion525/jetdb"
+readme = "../../README.md"
+keywords = ["access", "mdb", "accdb", "jet", "cli"]
+categories = ["command-line-utilities", "database"]
 
 [[bin]]
 name = "jetdb"

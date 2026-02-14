@@ -155,19 +155,19 @@ pub struct JetFormat {
     pub tdef_column_entry_span: usize,
 
     // -- Index definitions (TDEF sections [5][6]) ----------------------------
-    /// Byte span of one index-column definition entry (section [5]).
+    /// Byte span of one index-column definition entry (section \[5\]).
     pub idx_col_block_size: usize,
-    /// Byte span of one logical index definition entry (section [6]).
+    /// Byte span of one logical index definition entry (section \[6\]).
     pub idx_info_block_size: usize,
-    /// Bytes to skip at the start of each section [5] entry (type marker).
+    /// Bytes to skip at the start of each section \[5\] entry (type marker).
     pub idx_col_skip_before: usize,
-    /// Bytes to skip before the flags field in section [5].
+    /// Bytes to skip before the flags field in section \[5\].
     pub idx_col_skip_before_flags: usize,
-    /// Bytes to skip after the flags field in section [5].
+    /// Bytes to skip after the flags field in section \[5\].
     pub idx_col_skip_after_flags: usize,
-    /// Bytes to skip at the start of each section [6] entry (type marker).
+    /// Bytes to skip at the start of each section \[6\] entry (type marker).
     pub idx_info_skip_before: usize,
-    /// Byte offset of the index_type field within a section [6] entry.
+    /// Byte offset of the index_type field within a section \[6\] entry.
     pub idx_info_type_offset: usize,
 
     // -- Column entry fields -------------------------------------------------
@@ -211,7 +211,7 @@ pub static JET3: JetFormat = JetFormat {
     idx_col_skip_before: 0,
     idx_col_skip_before_flags: 0,
     idx_col_skip_after_flags: 0,
-    // Jet3 has no type marker at the start of section [6] entries (see HACKING.md).
+    // Jet3 has no type marker at the start of section \[6\] entries (see HACKING.md).
     // Note: offset 4 (index_col_def_num) is used instead of 0 (index_num),
     // which works because these values are normally identical.
     idx_info_skip_before: 0,
@@ -533,7 +533,7 @@ pub mod catalog_flags {
     pub const HIDDEN: u32 = 0x02;
 }
 
-/// Index flags (section [5] flags field in TDEF).
+/// Index flags (section \[5\] flags field in TDEF).
 pub mod index_flags {
     /// Unique index.
     pub const UNIQUE: u8 = 0x01;
@@ -543,7 +543,7 @@ pub mod index_flags {
     pub const REQUIRED: u8 = 0x08;
 }
 
-/// Index type (section [6] index_type field in TDEF).
+/// Index type (section \[6\] index_type field in TDEF).
 pub mod index_type {
     /// Normal index or PRIMARY KEY.
     pub const NORMAL: u8 = 0x01;
