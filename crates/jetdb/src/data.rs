@@ -478,6 +478,15 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
                 Value::Null
             }
         }
+        // Unknown fixed-size types: read as raw binary
+        ColumnType::Unknown(_) => {
+            let size = col.col_size as usize;
+            if size > 0 && offset + size <= data.len() {
+                Value::Binary(data[offset..offset + size].to_vec())
+            } else {
+                Value::Null
+            }
+        }
         // Variable-length types should not reach here, but handle gracefully
         _ => Value::Null,
     }
@@ -513,9 +522,43 @@ fn read_variable_value(
             Ok(s) => Value::Text(s),
             Err(_) => Value::Null,
         },
-        ColumnType::Binary => Value::Binary(var_data.to_vec()),
+        ColumnType::Binary | ColumnType::Unknown(_) => Value::Binary(var_data.to_vec()),
         ColumnType::Memo => read_memo_value(var_data, is_jet3, Some(reader)),
         ColumnType::Ole => read_ole_value(var_data, Some(reader)),
+        // Fixed-size types sometimes stored as variable-length (e.g. system tables)
+        ColumnType::Byte if var_data.len() >= 1 => Value::Byte(var_data[0]),
+        ColumnType::Int if var_data.len() >= 2 => {
+            Value::Int(i16::from_le_bytes([var_data[0], var_data[1]]))
+        }
+        ColumnType::Long if var_data.len() >= 4 => {
+            Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
+        }
+        ColumnType::BigInt if var_data.len() >= 8 => {
+            Value::BigInt(i64::from_le_bytes(var_data[..8].try_into().unwrap()))
+        }
+        ColumnType::Float if var_data.len() >= 4 => {
+            Value::Float(f32::from_le_bytes(var_data[..4].try_into().unwrap()))
+        }
+        ColumnType::Double if var_data.len() >= 8 => {
+            Value::Double(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
+        }
+        ColumnType::Money if var_data.len() >= 8 => {
+            let bytes: [u8; 8] = var_data[..8].try_into().unwrap();
+            Value::Money(money::money_to_string(&bytes))
+        }
+        ColumnType::Numeric if var_data.len() >= 17 => {
+            let bytes: [u8; 17] = var_data[..17].try_into().unwrap();
+            Value::Numeric(money::numeric_to_string(&bytes, col.scale))
+        }
+        ColumnType::Timestamp if var_data.len() >= 8 => {
+            Value::Timestamp(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
+        }
+        ColumnType::Guid if var_data.len() >= 16 => {
+            Value::Guid(format_guid(&var_data[..16]))
+        }
+        ColumnType::ComplexType if var_data.len() >= 4 => {
+            Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
+        }
         _ => Value::Null,
     }
 }

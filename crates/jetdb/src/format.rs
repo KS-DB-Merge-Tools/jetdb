@@ -310,27 +310,50 @@ impl fmt::Display for PageType {
 
 /// Column data type stored in the column definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
 pub enum ColumnType {
-    Boolean = 0x01,
-    Byte = 0x02,
-    Int = 0x03,
-    Long = 0x04,
-    Money = 0x05,
-    Float = 0x06,
-    Double = 0x07,
-    Timestamp = 0x08,
-    Binary = 0x09,
-    Text = 0x0A,
-    Ole = 0x0B,
-    Memo = 0x0C,
-    Guid = 0x0F,
-    Numeric = 0x10,
-    ComplexType = 0x12,
-    BigInt = 0x13,
+    Boolean,
+    Byte,
+    Int,
+    Long,
+    Money,
+    Float,
+    Double,
+    Timestamp,
+    Binary,
+    Text,
+    Ole,
+    Memo,
+    Guid,
+    Numeric,
+    ComplexType,
+    BigInt,
+    Unknown(u8),
 }
 
 impl ColumnType {
+    /// Return the byte value for this column type.
+    pub fn to_byte(&self) -> u8 {
+        match self {
+            Self::Boolean => 0x01,
+            Self::Byte => 0x02,
+            Self::Int => 0x03,
+            Self::Long => 0x04,
+            Self::Money => 0x05,
+            Self::Float => 0x06,
+            Self::Double => 0x07,
+            Self::Timestamp => 0x08,
+            Self::Binary => 0x09,
+            Self::Text => 0x0A,
+            Self::Ole => 0x0B,
+            Self::Memo => 0x0C,
+            Self::Guid => 0x0F,
+            Self::Numeric => 0x10,
+            Self::ComplexType => 0x12,
+            Self::BigInt => 0x13,
+            Self::Unknown(b) => *b,
+        }
+    }
+
     /// Return the fixed byte-size for this column type, or `None` for
     /// variable-length types.
     pub fn fixed_size(&self) -> Option<usize> {
@@ -351,6 +374,7 @@ impl ColumnType {
             Self::Numeric => Some(17),
             Self::ComplexType => Some(4),
             Self::BigInt => Some(8),
+            Self::Unknown(_) => None,
         }
     }
 
@@ -381,14 +405,17 @@ impl TryFrom<u8> for ColumnType {
             0x10 => Ok(Self::Numeric),
             0x12 => Ok(Self::ComplexType),
             0x13 => Ok(Self::BigInt),
-            _ => Err(FormatError::UnknownColumnType(value)),
+            other => Ok(Self::Unknown(other)),
         }
     }
 }
 
 impl fmt::Display for ColumnType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(self, f)
+        match self {
+            Self::Unknown(v) => write!(f, "Unknown(0x{v:02X})"),
+            other => fmt::Debug::fmt(other, f),
+        }
     }
 }
 
@@ -698,8 +725,18 @@ mod tests {
         for &(byte, expected) in types {
             let ct = ColumnType::try_from(byte).unwrap();
             assert_eq!(ct, expected);
-            assert_eq!(ct as u8, byte);
+            assert_eq!(ct.to_byte(), byte);
         }
+    }
+
+    #[test]
+    fn column_type_unknown() {
+        let ct = ColumnType::try_from(0x11).unwrap();
+        assert_eq!(ct, ColumnType::Unknown(0x11));
+        assert_eq!(ct.to_byte(), 0x11);
+        assert_eq!(ct.fixed_size(), None);
+        assert!(ct.is_variable_length());
+        assert_eq!(ct.to_string(), "Unknown(0x11)");
     }
 
     #[test]

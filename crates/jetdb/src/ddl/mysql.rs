@@ -31,6 +31,7 @@ impl DdlDialect for Mysql {
             ColumnType::Numeric => format!("DECIMAL({},{})", col.precision, col.scale),
             ColumnType::ComplexType => "INT".to_string(),
             ColumnType::BigInt => "BIGINT".to_string(),
+            ColumnType::Unknown(_) => "LONGBLOB".to_string(),
         }
     }
 

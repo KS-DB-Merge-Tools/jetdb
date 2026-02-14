@@ -31,6 +31,7 @@ impl DdlDialect for Postgres {
             ColumnType::Numeric => format!("NUMERIC({},{})", col.precision, col.scale),
             ColumnType::ComplexType => "INTEGER".to_string(),
             ColumnType::BigInt => "BIGINT".to_string(),
+            ColumnType::Unknown(_) => "BYTEA".to_string(),
         }
     }
 
