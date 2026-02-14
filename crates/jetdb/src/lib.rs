@@ -11,6 +11,7 @@ pub mod query;
 pub mod relationship;
 pub mod table;
 pub mod timestamp;
+pub mod vba;
 
 pub use catalog::{read_catalog, table_names, CatalogEntry};
 pub use file::{find_row, DbHeader, FileError, PageReader};
@@ -27,3 +28,4 @@ pub use table::{
 pub use data::{read_table_rows, ReadResult, Value};
 pub use prop::{read_object_properties, ObjectProperties, PropMapType, Property, PropertyMap};
 pub use query::{query_to_sql, read_queries, QueryDef, QueryType};
+pub use vba::{read_vba_project, VbaModule, VbaModuleType, VbaProject};

@@ -22,6 +22,8 @@ pub enum FileError {
     InvalidProperty { reason: &'static str },
     TableNotFound { name: String },
     QueryNotFound { name: String },
+    NoVbaProject,
+    InvalidVbaProject { reason: String },
 }
 
 impl fmt::Display for FileError {
@@ -52,6 +54,8 @@ impl fmt::Display for FileError {
             }
             Self::TableNotFound { name } => write!(f, "table not found: {name}"),
             Self::QueryNotFound { name } => write!(f, "query not found: {name}"),
+            Self::NoVbaProject => write!(f, "no VBA project found in this database"),
+            Self::InvalidVbaProject { reason } => write!(f, "invalid VBA project: {reason}"),
         }
     }
 }

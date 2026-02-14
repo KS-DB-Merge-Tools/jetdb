@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust library for reading Microsoft Access (.mdb/.accdb) files"
+
+[dependencies]
+cfb = "0.10"
+ovba = "0.7"
