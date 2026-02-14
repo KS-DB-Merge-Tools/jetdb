@@ -384,18 +384,6 @@ fn collect_children<'a>(
 
 /// Build an in-memory OLE2/CFB compound file from MSysAccessStorage entries.
 fn build_cfb(entries: &[StorageEntry]) -> Result<Vec<u8>, FileError> {
-    // Approach A: Check if any entry contains a complete CFB file
-    for entry in entries {
-        if entry.data.len() > 4 && &entry.data[..4] == &[0xD0, 0xCF, 0x11, 0xE0] {
-            // This entry contains a full CFB — try to use it directly
-            let result = ovba::open_project(entry.data.clone());
-            if result.is_ok() {
-                return Ok(entry.data.clone());
-            }
-        }
-    }
-
-    // Approach B: Reconstruct CFB from tree structure
     let (vba_project_id, vba_entries) =
         find_vba_project_entries(entries).ok_or(FileError::NoVbaProject)?;
     if vba_entries.is_empty() {
@@ -524,23 +512,37 @@ mod tests {
         );
     }
 
+    /// Helper to verify VBA project modules match expected names and types.
+    fn assert_vba_modules(
+        project: &VbaProject,
+        expected: &[(&str, VbaModuleType)],
+    ) {
+        assert_eq!(project.modules.len(), expected.len());
+        let mut names: Vec<&str> = project.modules.iter().map(|m| m.name.as_str()).collect();
+        names.sort();
+        let mut expected_names: Vec<&str> = expected.iter().map(|(n, _)| *n).collect();
+        expected_names.sort();
+        assert_eq!(names, expected_names);
+
+        for (name, expected_type) in expected {
+            let module = project.modules.iter().find(|m| m.name == *name).unwrap();
+            assert_eq!(module.module_type, *expected_type, "type mismatch for {name}");
+            assert!(!module.source.is_empty(), "empty source for {name}");
+        }
+    }
+
+    const EXPECTED_MODULES: &[(&str, VbaModuleType)] = &[
+        ("Module1", VbaModuleType::Standard),
+        ("Class1", VbaModuleType::ClassOrDocument),
+        ("Form_Form1", VbaModuleType::ClassOrDocument),
+    ];
+
     #[test]
     fn vba_v2003() {
         let path = skip_if_missing!("vbaV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();
         let project = read_vba_project(&mut reader).expect("failed to read VBA project");
-        assert!(
-            !project.modules.is_empty(),
-            "VBA project should have modules"
-        );
-        for module in &project.modules {
-            assert!(!module.name.is_empty(), "module name should not be empty");
-            assert!(
-                !module.source.is_empty(),
-                "module '{}' source should not be empty",
-                module.name
-            );
-        }
+        assert_vba_modules(&project, EXPECTED_MODULES);
     }
 
     #[test]
@@ -548,18 +550,7 @@ mod tests {
         let path = skip_if_missing!("vbaV2007.accdb");
         let mut reader = PageReader::open(&path).unwrap();
         let project = read_vba_project(&mut reader).expect("failed to read VBA project");
-        assert!(
-            !project.modules.is_empty(),
-            "VBA project should have modules"
-        );
-        for module in &project.modules {
-            assert!(!module.name.is_empty(), "module name should not be empty");
-            assert!(
-                !module.source.is_empty(),
-                "module '{}' source should not be empty",
-                module.name
-            );
-        }
+        assert_vba_modules(&project, EXPECTED_MODULES);
     }
 
     #[test]
@@ -572,7 +563,6 @@ mod tests {
 
     #[test]
     fn vba_v2000_catalog() {
-        // MSysAccessObjects の Unknown カラム型 (0x11) でカタログ読み込みが成功することを確認
         let path = skip_if_missing!("vbaV2000.mdb");
         let mut reader = PageReader::open(&path).unwrap();
         let catalog = catalog::read_catalog(&mut reader).unwrap();
@@ -581,22 +571,10 @@ mod tests {
 
     #[test]
     fn vba_v2000() {
-        // vbaV2000.mdb uses MSysAccessObjects (no MSysAccessStorage).
-        // VBA extraction should work via the MSysAccessObjects fallback path.
+        // Uses MSysAccessObjects fallback (no MSysAccessStorage in this database).
         let path = skip_if_missing!("vbaV2000.mdb");
         let mut reader = PageReader::open(&path).unwrap();
         let project = read_vba_project(&mut reader).expect("failed to read VBA project");
-        assert!(
-            !project.modules.is_empty(),
-            "VBA project should have modules"
-        );
-        for module in &project.modules {
-            assert!(!module.name.is_empty(), "module name should not be empty");
-            assert!(
-                !module.source.is_empty(),
-                "module '{}' source should not be empty",
-                module.name
-            );
-        }
+        assert_vba_modules(&project, EXPECTED_MODULES);
     }
 }
