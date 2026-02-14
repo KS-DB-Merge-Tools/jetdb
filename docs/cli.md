@@ -192,6 +192,59 @@ postgres   PostgreSQL
 mysql      MySQL
 access     Access SQL
 
+### queries — Manage saved queries
+
+#### queries list — List saved query names
+
+```
+jetdb queries list [OPTIONS] <FILE>
+```
+
+List the names of saved queries in the database (space-separated by default).
+
+##### Options
+
+- `-1`, `--newline` — Print one query name per line
+- `-d`, `--delimiter <STRING>` — Custom delimiter between query names (default: space)
+
+##### Output examples
+
+```
+$ jetdb queries list queryTest.mdb
+SelectQuery UnionQuery CrosstabQuery DeleteQuery UpdateQuery AppendQuery MakeTableQuery PassthroughQuery DataDefinitionQuery
+
+$ jetdb queries list -1 queryTest.mdb
+SelectQuery
+UnionQuery
+CrosstabQuery
+DeleteQuery
+UpdateQuery
+AppendQuery
+MakeTableQuery
+PassthroughQuery
+DataDefinitionQuery
+
+$ jetdb queries list test.mdb
+(no output — database has no saved queries)
+```
+
+#### queries show — Show query SQL
+
+```
+jetdb queries show <FILE> <QUERY_NAME>
+```
+
+Show the restored SQL definition of the specified saved query.
+
+##### Output examples
+
+```
+$ jetdb queries show queryTest.mdb DeleteQuery
+DELETE [Table1].[col1], [Table1].[col2], [Table1].[col3]
+FROM [Table1]
+WHERE (([Table1].[col1]="foo"));
+```
+
 ### export — Export table data as CSV
 
 ```

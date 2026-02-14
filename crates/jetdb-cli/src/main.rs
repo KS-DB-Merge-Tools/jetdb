@@ -1,5 +1,6 @@
 mod ddl;
 mod export;
+mod query;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -35,6 +36,8 @@ enum Commands {
     Schema(SchemaArgs),
     /// Export table data as CSV
     Export(export::ExportArgs),
+    /// Manage saved queries (list / show)
+    Queries(query::QueryArgs),
 }
 
 #[derive(Args)]
@@ -476,6 +479,7 @@ fn main() -> ExitCode {
         Commands::Tables(args) => cmd_tables(args),
         Commands::Schema(args) => cmd_schema(args),
         Commands::Export(args) => export::cmd_export(args),
+        Commands::Queries(args) => query::cmd_queries(args),
     }
 }
 

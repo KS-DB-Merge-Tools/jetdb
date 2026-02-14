@@ -192,6 +192,59 @@ postgres   PostgreSQL
 mysql      MySQL
 access     Access SQL
 
+### queries — 保存済みクエリの管理
+
+#### queries list — クエリ名の一覧表示
+
+```
+jetdb queries list [OPTIONS] <FILE>
+```
+
+データベースに保存されたクエリの名前一覧を表示する (デフォルトはスペース区切り)。
+
+##### オプション
+
+- `-1`, `--newline` — クエリ名を1行ずつ出力
+- `-d`, `--delimiter <STRING>` — クエリ名間のカスタム区切り文字列 (デフォルト: スペース)
+
+##### 出力例
+
+```
+$ jetdb queries list queryTest.mdb
+SelectQuery UnionQuery CrosstabQuery DeleteQuery UpdateQuery AppendQuery MakeTableQuery PassthroughQuery DataDefinitionQuery
+
+$ jetdb queries list -1 queryTest.mdb
+SelectQuery
+UnionQuery
+CrosstabQuery
+DeleteQuery
+UpdateQuery
+AppendQuery
+MakeTableQuery
+PassthroughQuery
+DataDefinitionQuery
+
+$ jetdb queries list test.mdb
+(出力なし — データベースにクエリなし)
+```
+
+#### queries show — クエリ SQL の表示
+
+```
+jetdb queries show <FILE> <QUERY_NAME>
+```
+
+指定したクエリの復元 SQL 定義を表示する。
+
+##### 出力例
+
+```
+$ jetdb queries show queryTest.mdb DeleteQuery
+DELETE [Table1].[col1], [Table1].[col2], [Table1].[col3]
+FROM [Table1]
+WHERE (([Table1].[col1]="foo"));
+```
+
 ### export — テーブルデータの CSV エクスポート
 
 ```

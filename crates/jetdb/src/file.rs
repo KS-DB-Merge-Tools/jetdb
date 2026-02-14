@@ -20,6 +20,7 @@ pub enum FileError {
     InvalidUsageMap { reason: &'static str },
     InvalidTableDef { reason: &'static str },
     TableNotFound { name: String },
+    QueryNotFound { name: String },
 }
 
 impl fmt::Display for FileError {
@@ -46,6 +47,7 @@ impl fmt::Display for FileError {
                 write!(f, "invalid table definition: {reason}")
             }
             Self::TableNotFound { name } => write!(f, "table not found: {name}"),
+            Self::QueryNotFound { name } => write!(f, "query not found: {name}"),
         }
     }
 }
