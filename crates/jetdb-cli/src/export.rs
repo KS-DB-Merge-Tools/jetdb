@@ -3,12 +3,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, ValueEnum};
-use jetdb::format::column_flags;
-#[cfg(test)]
-use jetdb::format::ColumnType;
 use jetdb::timestamp;
 use jetdb::{
-    read_catalog, read_table_def, read_table_rows, ColumnDef, PageReader, Value,
+    read_catalog, read_table_def, read_table_rows, PageReader, Value,
 };
 
 // ---------------------------------------------------------------------------
@@ -165,11 +162,6 @@ pub fn format_binary(data: &[u8], mode: BinMode) -> String {
     }
 }
 
-/// Return `true` if the column has the REPLICATION flag set.
-pub fn is_replication_column(col: &ColumnDef) -> bool {
-    (col.flags & column_flags::REPLICATION) != 0
-}
-
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -217,7 +209,7 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
         .columns
         .iter()
         .enumerate()
-        .filter(|(_, col)| args.system_columns || !is_replication_column(col))
+        .filter(|(_, col)| args.system_columns || !jetdb::is_replication_column(col))
         .map(|(i, _)| i)
         .collect();
 
@@ -491,39 +483,4 @@ mod tests {
         assert_eq!(format_binary(&[], BinMode::Hex), "");
     }
 
-    // -- is_replication_column ------------------------------------------------
-
-    #[test]
-    fn is_replication_true() {
-        let col = ColumnDef {
-            name: "s_GUID".to_string(),
-            col_type: ColumnType::Guid,
-            col_num: 1,
-            var_col_num: 0,
-            fixed_offset: 0,
-            col_size: 16,
-            flags: column_flags::REPLICATION | column_flags::NULLABLE,
-            is_fixed: false,
-            precision: 0,
-            scale: 0,
-        };
-        assert!(is_replication_column(&col));
-    }
-
-    #[test]
-    fn is_replication_false() {
-        let col = ColumnDef {
-            name: "ID".to_string(),
-            col_type: ColumnType::Long,
-            col_num: 1,
-            var_col_num: 0,
-            fixed_offset: 0,
-            col_size: 4,
-            flags: column_flags::FIXED,
-            is_fixed: true,
-            precision: 0,
-            scale: 0,
-        };
-        assert!(!is_replication_column(&col));
-    }
 }

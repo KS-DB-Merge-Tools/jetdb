@@ -1,5 +1,5 @@
-use jetdb::format::ColumnType;
-use jetdb::ColumnDef;
+use crate::format::ColumnType;
+use crate::table::ColumnDef;
 
 use super::DdlDialect;
 

@@ -1,5 +1,6 @@
 pub mod catalog;
 pub mod data;
+pub mod ddl;
 pub mod encoding;
 pub mod file;
 pub mod format;
@@ -18,8 +19,8 @@ pub use format::{
 };
 pub use relationship::{read_relationships, relationship_flags, Relationship, RelationshipColumn};
 pub use table::{
-    read_table_def, ColumnDef, ForeignKeyReference, IndexColumn, IndexColumnOrder, IndexDef,
-    TableDef,
+    is_replication_column, read_table_def, ColumnDef, ForeignKeyReference, IndexColumn,
+    IndexColumnOrder, IndexDef, TableDef,
 };
 
 pub use data::{read_table_rows, ReadResult, Value};

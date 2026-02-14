@@ -1,31 +1,15 @@
-mod access;
-mod mysql;
-mod postgres;
-mod sqlite;
+pub mod access;
+pub mod mysql;
+pub mod postgres;
+pub mod sqlite;
 
-use jetdb::format::{column_flags, index_flags, index_type};
-use jetdb::{ColumnDef, IndexDef, Relationship, TableDef};
+pub use access::Access;
+pub use mysql::Mysql;
+pub use postgres::Postgres;
+pub use sqlite::Sqlite;
 
-// ---------------------------------------------------------------------------
-// DdlFormat enum (clap::ValueEnum)
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub enum DdlFormat {
-    Sqlite,
-    Postgres,
-    Mysql,
-    Access,
-}
-
-pub fn create_dialect(format: DdlFormat) -> Box<dyn DdlDialect> {
-    match format {
-        DdlFormat::Sqlite => Box::new(sqlite::Sqlite),
-        DdlFormat::Postgres => Box::new(postgres::Postgres),
-        DdlFormat::Mysql => Box::new(mysql::Mysql),
-        DdlFormat::Access => Box::new(access::Access),
-    }
-}
+use crate::format::{column_flags, index_flags, index_type};
+use crate::{ColumnDef, IndexDef, Relationship, TableDef};
 
 // ---------------------------------------------------------------------------
 // DdlDialect trait
@@ -295,7 +279,7 @@ pub fn generate_foreign_keys(
 }
 
 fn append_cascade_clauses(stmt: &mut String, rel: &Relationship) {
-    use jetdb::relationship_flags;
+    use crate::relationship::relationship_flags;
     if (rel.flags & relationship_flags::CASCADE_UPDATE) != 0 {
         stmt.push_str("\n    ON UPDATE CASCADE");
     }
@@ -311,8 +295,8 @@ fn append_cascade_clauses(stmt: &mut String, rel: &Relationship) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jetdb::format::{column_flags, index_flags, index_type, ColumnType};
-    use jetdb::{
+    use crate::format::{column_flags, index_flags, index_type, ColumnType};
+    use crate::{
         ColumnDef, IndexColumn, IndexColumnOrder, IndexDef, Relationship, RelationshipColumn,
         TableDef,
     };
@@ -417,16 +401,16 @@ mod tests {
     }
 
     fn sqlite() -> Box<dyn DdlDialect> {
-        create_dialect(DdlFormat::Sqlite)
+        Box::new(Sqlite)
     }
     fn postgres() -> Box<dyn DdlDialect> {
-        create_dialect(DdlFormat::Postgres)
+        Box::new(Postgres)
     }
     fn mysql() -> Box<dyn DdlDialect> {
-        create_dialect(DdlFormat::Mysql)
+        Box::new(Mysql)
     }
     fn access() -> Box<dyn DdlDialect> {
-        create_dialect(DdlFormat::Access)
+        Box::new(Access)
     }
 
     // ========================================================================
@@ -911,7 +895,7 @@ mod tests {
 
     #[test]
     fn foreign_key_cascade() {
-        use jetdb::relationship_flags;
+        use crate::relationship::relationship_flags;
         let d = postgres();
         let rels = vec![relationship(
             "fk1",

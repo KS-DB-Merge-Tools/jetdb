@@ -86,6 +86,11 @@ pub struct TableDef {
     pub data_pages: Vec<u32>,
 }
 
+/// Return `true` if the column has the REPLICATION flag set.
+pub fn is_replication_column(col: &ColumnDef) -> bool {
+    (col.flags & crate::format::column_flags::REPLICATION) != 0
+}
+
 // ---------------------------------------------------------------------------
 // read_table_def
 // ---------------------------------------------------------------------------
@@ -560,7 +565,8 @@ fn read_u32(buf: &[u8], pos: usize) -> Result<u32, FileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::CATALOG_PAGE;
+    use crate::format::{column_flags, CATALOG_PAGE};
+    use crate::format::ColumnType;
 
     fn test_data_path(relative: &str) -> Option<std::path::PathBuf> {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -822,6 +828,42 @@ mod tests {
         for fk in &fk_indexes {
             assert!(fk.foreign_key.is_some());
         }
+    }
+
+    // -- is_replication_column tests ----------------------------------------
+
+    #[test]
+    fn is_replication_true() {
+        let col = ColumnDef {
+            name: "s_GUID".to_string(),
+            col_type: ColumnType::Guid,
+            col_num: 1,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size: 16,
+            flags: column_flags::REPLICATION | column_flags::NULLABLE,
+            is_fixed: false,
+            precision: 0,
+            scale: 0,
+        };
+        assert!(is_replication_column(&col));
+    }
+
+    #[test]
+    fn is_replication_false() {
+        let col = ColumnDef {
+            name: "ID".to_string(),
+            col_type: ColumnType::Long,
+            col_num: 1,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size: 4,
+            flags: column_flags::FIXED,
+            is_fixed: true,
+            precision: 0,
+            scale: 0,
+        };
+        assert!(!is_replication_column(&col));
     }
 
     #[test]

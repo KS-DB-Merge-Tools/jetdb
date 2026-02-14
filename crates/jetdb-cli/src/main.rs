@@ -257,7 +257,7 @@ fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
     // DDL mode or human-readable mode
     if let Some(format) = args.ddl_format {
         let dialect = ddl::create_dialect(format);
-        let output = ddl::generate_ddl(
+        let output = jetdb::ddl::generate_ddl(
             &*dialect,
             &tables,
             &relationships,
