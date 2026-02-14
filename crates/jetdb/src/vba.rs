@@ -41,19 +41,23 @@ pub struct VbaProject {
 /// `MSysAccessObjects` (Jet3/Access 97) for older databases.
 pub fn read_vba_project(reader: &mut PageReader) -> Result<VbaProject, FileError> {
     // Try MSysAccessStorage first (Jet4/ACE format)
-    match read_storage_entries(reader) {
-        Ok(entries) if !entries.is_empty() => {
-            let cfb_bytes = build_cfb(&entries)?;
-            return extract_modules_from_cfb(cfb_bytes);
+    let entries = read_storage_entries(reader)?;
+    if !entries.is_empty() {
+        let project = build_cfb_and_extract(&entries)?;
+        if !project.modules.is_empty() {
+            return Ok(project);
         }
-        Ok(_) => {}                          // empty entries, try fallback
-        Err(FileError::NoVbaProject) => {}   // table not found, try fallback
-        Err(e) => return Err(e),             // other errors propagate
     }
 
     // Fall back to MSysAccessObjects (Jet3/Access 97 format)
     let raw_cfb = read_access_objects_cfb(reader)?;
+    if raw_cfb.is_empty() {
+        return Ok(VbaProject { modules: Vec::new() });
+    }
     let cfb_bytes = extract_vba_project_cfb(raw_cfb)?;
+    if cfb_bytes.is_empty() {
+        return Ok(VbaProject { modules: Vec::new() });
+    }
     extract_modules_from_cfb(cfb_bytes)
 }
 
@@ -83,10 +87,6 @@ fn extract_modules_from_cfb(cfb_bytes: Vec<u8>) -> Result<VbaProject, FileError>
         });
     }
 
-    if modules.is_empty() {
-        return Err(FileError::NoVbaProject);
-    }
-
     Ok(VbaProject { modules })
 }
 
@@ -107,10 +107,10 @@ struct StorageEntry {
 fn read_storage_entries(reader: &mut PageReader) -> Result<Vec<StorageEntry>, FileError> {
     // Find MSysAccessStorage in the catalog
     let catalog = catalog::read_catalog(reader)?;
-    let entry = catalog
-        .iter()
-        .find(|e| e.name == "MSysAccessStorage")
-        .ok_or(FileError::NoVbaProject)?;
+    let entry = match catalog.iter().find(|e| e.name == "MSysAccessStorage") {
+        Some(e) => e,
+        None => return Ok(Vec::new()),
+    };
 
     let tdef = table::read_table_def(reader, &entry.name, entry.table_page)?;
     let result = data::read_table_rows(reader, &tdef)?;
@@ -192,10 +192,10 @@ fn read_storage_entries(reader: &mut PageReader) -> Result<Vec<StorageEntry>, Fi
 /// the CFB data that should be concatenated in ID order.
 fn read_access_objects_cfb(reader: &mut PageReader) -> Result<Vec<u8>, FileError> {
     let catalog = catalog::read_catalog(reader)?;
-    let entry = catalog
-        .iter()
-        .find(|e| e.name == "MSysAccessObjects")
-        .ok_or(FileError::NoVbaProject)?;
+    let entry = match catalog.iter().find(|e| e.name == "MSysAccessObjects") {
+        Some(e) => e,
+        None => return Ok(Vec::new()),
+    };
 
     let tdef = table::read_table_def(reader, &entry.name, entry.table_page)?;
     let result = data::read_table_rows(reader, &tdef)?;
@@ -243,7 +243,7 @@ fn read_access_objects_cfb(reader: &mut PageReader) -> Result<Vec<u8>, FileError
     }
 
     if cfb_bytes.len() < 4 || cfb_bytes[..4] != [0xD0, 0xCF, 0x11, 0xE0] {
-        return Err(FileError::NoVbaProject);
+        return Ok(Vec::new());
     }
 
     Ok(cfb_bytes)
@@ -278,7 +278,7 @@ fn extract_vba_project_cfb(cfb_bytes: Vec<u8>) -> Result<Vec<u8>, FileError> {
         .collect();
 
     if entries.is_empty() {
-        return Err(FileError::NoVbaProject);
+        return Ok(Vec::new());
     }
 
     // Build new CFB with entries at root level
@@ -382,12 +382,14 @@ fn collect_children<'a>(
 // Internal: CFB reconstruction
 // ---------------------------------------------------------------------------
 
-/// Build an in-memory OLE2/CFB compound file from MSysAccessStorage entries.
-fn build_cfb(entries: &[StorageEntry]) -> Result<Vec<u8>, FileError> {
-    let (vba_project_id, vba_entries) =
-        find_vba_project_entries(entries).ok_or(FileError::NoVbaProject)?;
+/// Build an in-memory OLE2/CFB from MSysAccessStorage entries and extract modules.
+fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileError> {
+    let (vba_project_id, vba_entries) = match find_vba_project_entries(entries) {
+        Some(v) => v,
+        None => return Ok(VbaProject { modules: Vec::new() }),
+    };
     if vba_entries.is_empty() {
-        return Err(FileError::NoVbaProject);
+        return Ok(VbaProject { modules: Vec::new() });
     }
 
     // Build an ID-to-entry map for path construction
@@ -429,7 +431,7 @@ fn build_cfb(entries: &[StorageEntry]) -> Result<Vec<u8>, FileError> {
     })?;
 
     let bytes = cf.into_inner().into_inner();
-    Ok(bytes)
+    extract_modules_from_cfb(bytes)
 }
 
 /// Check if a storage entry is a storage (directory) vs stream (file).
@@ -505,10 +507,10 @@ mod tests {
     fn no_vba_project() {
         let path = skip_if_missing!("V2003/testV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();
-        let result = read_vba_project(&mut reader);
+        let project = read_vba_project(&mut reader).expect("should succeed");
         assert!(
-            result.is_err(),
-            "expected error for database without VBA project"
+            project.modules.is_empty(),
+            "expected empty modules for database without VBA project"
         );
     }
 

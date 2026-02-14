@@ -211,18 +211,18 @@ jetdb queries list [OPTIONS] <FILE>
 
 ```
 $ jetdb queries list queryTest.mdb
-SelectQuery UnionQuery CrosstabQuery DeleteQuery UpdateQuery AppendQuery MakeTableQuery PassthroughQuery DataDefinitionQuery
+AppendQuery CrosstabQuery DataDefinitionQuery DeleteQuery MakeTableQuery PassthroughQuery SelectQuery UnionQuery UpdateQuery
 
 $ jetdb queries list -1 queryTest.mdb
-SelectQuery
-UnionQuery
-CrosstabQuery
-DeleteQuery
-UpdateQuery
 AppendQuery
+CrosstabQuery
+DataDefinitionQuery
+DeleteQuery
 MakeTableQuery
 PassthroughQuery
-DataDefinitionQuery
+SelectQuery
+UnionQuery
+UpdateQuery
 
 $ jetdb queries list test.mdb
 (出力なし — データベースにクエリなし)
@@ -243,6 +243,62 @@ $ jetdb queries show queryTest.mdb DeleteQuery
 DELETE [Table1].[col1], [Table1].[col2], [Table1].[col3]
 FROM [Table1]
 WHERE (([Table1].[col1]="foo"));
+```
+
+### vba — VBA モジュールの管理
+
+#### vba list — VBA モジュール名の一覧表示
+
+```
+jetdb vba list [OPTIONS] <FILE>
+```
+
+データベースに含まれる VBA モジュールの名前一覧を表示する (デフォルトはスペース区切り、名前順ソート)。
+VBA プロジェクトを含まないデータベースでは何も出力しない。
+
+##### オプション
+
+- `-1`, `--newline` — モジュール名を1行ずつ出力
+- `-d`, `--delimiter <STRING>` — モジュール名間のカスタム区切り文字列 (デフォルト: スペース)
+
+##### 出力例
+
+```
+$ jetdb vba list vbaTest.mdb
+Class1 Form_Form1 Module1
+
+$ jetdb vba list -1 vbaTest.mdb
+Class1
+Form_Form1
+Module1
+
+$ jetdb vba list -d "|" vbaTest.mdb
+Class1|Form_Form1|Module1
+
+$ jetdb vba list test.mdb
+(出力なし — データベースに VBA プロジェクトなし)
+```
+
+#### vba show — VBA モジュールのソースコード表示
+
+```
+jetdb vba show <FILE> <MODULE_NAME>
+```
+
+指定した VBA モジュールのソースコードを表示する。
+
+##### 出力例
+
+```
+$ jetdb vba show vbaTest.mdb Module1
+Attribute VB_Name = "Module1"
+Option Compare Database
+Option Explicit
+
+Public Function Hello() As String
+    Hello = "Hello, World!"
+End Function
+...
 ```
 
 ### export — テーブルデータの CSV エクスポート

@@ -2,6 +2,7 @@ mod ddl;
 mod export;
 mod prop;
 mod query;
+mod vba;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -41,6 +42,8 @@ enum Commands {
     Queries(query::QueryArgs),
     /// Show object properties (LvProp)
     Prop(prop::PropArgs),
+    /// Manage VBA modules (list / show)
+    Vba(vba::VbaArgs),
 }
 
 #[derive(Args)]
@@ -149,10 +152,13 @@ fn run_tables(args: &TablesArgs) -> Result<(), jetdb::FileError> {
     let mut reader = PageReader::open(&args.file)?;
     let catalog = read_catalog(&mut reader)?;
 
-    for entry in &catalog {
-        if !should_show(entry, args.system) {
-            continue;
-        }
+    let mut entries: Vec<&CatalogEntry> = catalog
+        .iter()
+        .filter(|e| should_show(e, args.system))
+        .collect();
+    entries.sort_unstable_by(|a, b| a.name.cmp(&b.name));
+
+    for entry in &entries {
         if args.show_type {
             println!("{}\t{}", entry.object_type as i32, entry.name);
         } else if args.show_type_name {
@@ -484,6 +490,7 @@ fn main() -> ExitCode {
         Commands::Export(args) => export::cmd_export(args),
         Commands::Queries(args) => query::cmd_queries(args),
         Commands::Prop(args) => prop::cmd_prop(args),
+        Commands::Vba(args) => vba::cmd_vba(args),
     }
 }
 

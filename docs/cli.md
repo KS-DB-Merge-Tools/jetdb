@@ -211,18 +211,18 @@ List the names of saved queries in the database (space-separated by default).
 
 ```
 $ jetdb queries list queryTest.mdb
-SelectQuery UnionQuery CrosstabQuery DeleteQuery UpdateQuery AppendQuery MakeTableQuery PassthroughQuery DataDefinitionQuery
+AppendQuery CrosstabQuery DataDefinitionQuery DeleteQuery MakeTableQuery PassthroughQuery SelectQuery UnionQuery UpdateQuery
 
 $ jetdb queries list -1 queryTest.mdb
-SelectQuery
-UnionQuery
-CrosstabQuery
-DeleteQuery
-UpdateQuery
 AppendQuery
+CrosstabQuery
+DataDefinitionQuery
+DeleteQuery
 MakeTableQuery
 PassthroughQuery
-DataDefinitionQuery
+SelectQuery
+UnionQuery
+UpdateQuery
 
 $ jetdb queries list test.mdb
 (no output — database has no saved queries)
@@ -243,6 +243,62 @@ $ jetdb queries show queryTest.mdb DeleteQuery
 DELETE [Table1].[col1], [Table1].[col2], [Table1].[col3]
 FROM [Table1]
 WHERE (([Table1].[col1]="foo"));
+```
+
+### vba — Manage VBA modules
+
+#### vba list — List VBA module names
+
+```
+jetdb vba list [OPTIONS] <FILE>
+```
+
+List the names of VBA modules in the database (space-separated by default, sorted alphabetically).
+If the database has no VBA project, produces no output.
+
+##### Options
+
+- `-1`, `--newline` — Print one module name per line
+- `-d`, `--delimiter <STRING>` — Custom delimiter between module names (default: space)
+
+##### Output examples
+
+```
+$ jetdb vba list vbaTest.mdb
+Class1 Form_Form1 Module1
+
+$ jetdb vba list -1 vbaTest.mdb
+Class1
+Form_Form1
+Module1
+
+$ jetdb vba list -d "|" vbaTest.mdb
+Class1|Form_Form1|Module1
+
+$ jetdb vba list test.mdb
+(no output — database has no VBA project)
+```
+
+#### vba show — Show VBA module source code
+
+```
+jetdb vba show <FILE> <MODULE_NAME>
+```
+
+Show the source code of the specified VBA module.
+
+##### Output examples
+
+```
+$ jetdb vba show vbaTest.mdb Module1
+Attribute VB_Name = "Module1"
+Option Compare Database
+Option Explicit
+
+Public Function Hello() As String
+    Hello = "Hello, World!"
+End Function
+...
 ```
 
 ### export — Export table data as CSV
