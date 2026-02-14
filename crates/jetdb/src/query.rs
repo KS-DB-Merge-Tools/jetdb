@@ -95,136 +95,130 @@ struct QueryRow {
 }
 
 // ---------------------------------------------------------------------------
-// read_queries
+// Value extraction helpers
 // ---------------------------------------------------------------------------
 
-/// Read all query definitions from the MSysQueries system table.
-///
-/// Returns an empty `Vec` if the table does not exist.
-pub fn read_queries(reader: &mut PageReader) -> Result<Vec<QueryDef>, FileError> {
-    let catalog = read_catalog(reader)?;
+fn get_long(row: &[Value], idx: usize) -> Option<i32> {
+    match row.get(idx) {
+        Some(Value::Long(v)) => Some(*v),
+        _ => None,
+    }
+}
 
-    let queries_entry = catalog.iter().find(|e| {
-        e.name == "MSysQueries"
-            && matches!(e.object_type, ObjectType::Table | ObjectType::SystemTable)
-    });
-    let queries_page = match queries_entry {
-        Some(e) => e.table_page,
-        None => return Ok(Vec::new()),
-    };
+fn get_byte(row: &[Value], idx: usize) -> Option<u8> {
+    match row.get(idx) {
+        Some(Value::Byte(v)) => Some(*v),
+        _ => None,
+    }
+}
 
-    let tdef = table::read_table_def(reader, "MSysQueries", queries_page)?;
-    let result = data::read_table_rows(reader, &tdef)?;
+fn get_binary(row: &[Value], idx: usize) -> Option<&[u8]> {
+    match row.get(idx) {
+        Some(Value::Binary(b)) => Some(b),
+        _ => None,
+    }
+}
 
-    // Locate column indices
-    let mut object_id_idx = None;
-    let mut attribute_idx = None;
-    let mut order_idx = None;
-    let mut name1_idx = None;
-    let mut name2_idx = None;
-    let mut expression_idx = None;
-    let mut flag_idx = None;
-    let mut extra_idx = None;
+fn get_text(row: &[Value], idx: usize) -> Option<&str> {
+    match row.get(idx) {
+        Some(Value::Text(s)) if !s.is_empty() => Some(s),
+        _ => None,
+    }
+}
 
-    for (i, col) in tdef.columns.iter().enumerate() {
+fn get_int(row: &[Value], idx: usize) -> Option<i16> {
+    match row.get(idx) {
+        Some(Value::Int(v)) => Some(*v),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Query column resolution
+// ---------------------------------------------------------------------------
+
+struct QueryColumnIndexes {
+    object_id: usize,
+    attribute: usize,
+    order: Option<usize>,
+    name1: Option<usize>,
+    name2: Option<usize>,
+    expression: Option<usize>,
+    flag: Option<usize>,
+    extra: Option<usize>,
+}
+
+fn resolve_query_columns(
+    columns: &[table::ColumnDef],
+) -> Result<QueryColumnIndexes, FileError> {
+    let mut object_id = None;
+    let mut attribute = None;
+    let mut order = None;
+    let mut name1 = None;
+    let mut name2 = None;
+    let mut expression = None;
+    let mut flag = None;
+    let mut extra = None;
+
+    for (i, col) in columns.iter().enumerate() {
         match col.name.as_str() {
-            "ObjectId" => object_id_idx = Some(i),
-            "Attribute" => attribute_idx = Some(i),
-            "Order" => order_idx = Some(i),
-            "Name1" => name1_idx = Some(i),
-            "Name2" => name2_idx = Some(i),
-            "Expression" => expression_idx = Some(i),
-            "Flag" => flag_idx = Some(i),
-            "LvExtra" => extra_idx = Some(i),
+            "ObjectId" => object_id = Some(i),
+            "Attribute" => attribute = Some(i),
+            "Order" => order = Some(i),
+            "Name1" => name1 = Some(i),
+            "Name2" => name2 = Some(i),
+            "Expression" => expression = Some(i),
+            "Flag" => flag = Some(i),
+            "LvExtra" => extra = Some(i),
             _ => {}
         }
     }
 
-    let object_id_idx = object_id_idx.ok_or(FileError::InvalidTableDef {
+    let object_id = object_id.ok_or(FileError::InvalidTableDef {
         reason: "MSysQueries missing ObjectId column",
     })?;
-    let attribute_idx = attribute_idx.ok_or(FileError::InvalidTableDef {
+    let attribute = attribute.ok_or(FileError::InvalidTableDef {
         reason: "MSysQueries missing Attribute column",
     })?;
 
-    // Group rows by ObjectId
-    struct RawRow {
-        attribute: u8,
-        order: Vec<u8>,
-        name1: Option<String>,
-        name2: Option<String>,
-        expression: Option<String>,
-        flag: Option<i16>,
-        extra: Option<i32>,
-    }
+    Ok(QueryColumnIndexes {
+        object_id,
+        attribute,
+        order,
+        name1,
+        name2,
+        expression,
+        flag,
+        extra,
+    })
+}
 
-    let mut groups: BTreeMap<i32, Vec<RawRow>> = BTreeMap::new();
+// ---------------------------------------------------------------------------
+// RawRow — intermediate representation for grouping
+// ---------------------------------------------------------------------------
 
-    for row in &result.rows {
-        let object_id = match row.get(object_id_idx) {
-            Some(Value::Long(v)) => *v,
-            _ => continue,
-        };
-        let attribute = match row.get(attribute_idx) {
-            Some(Value::Byte(v)) => *v,
-            _ => continue,
-        };
-        let order = match order_idx.and_then(|i| row.get(i)) {
-            Some(Value::Binary(b)) => b.clone(),
-            _ => Vec::new(),
-        };
-        let name1 = match name1_idx.and_then(|i| row.get(i)) {
-            Some(Value::Text(s)) if !s.is_empty() => Some(s.clone()),
-            _ => None,
-        };
-        let name2 = match name2_idx.and_then(|i| row.get(i)) {
-            Some(Value::Text(s)) if !s.is_empty() => Some(s.clone()),
-            _ => None,
-        };
-        let expression = match expression_idx.and_then(|i| row.get(i)) {
-            Some(Value::Text(s)) if !s.is_empty() => {
-                let trimmed = s.trim_end_matches('\0');
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            }
-            _ => None,
-        };
-        let flag = match flag_idx.and_then(|i| row.get(i)) {
-            Some(Value::Int(v)) => Some(*v),
-            _ => None,
-        };
-        let extra = match extra_idx.and_then(|i| row.get(i)) {
-            Some(Value::Long(v)) => Some(*v),
-            _ => None,
-        };
+struct RawRow {
+    attribute: u8,
+    order: Vec<u8>,
+    name1: Option<String>,
+    name2: Option<String>,
+    expression: Option<String>,
+    flag: Option<i16>,
+    extra: Option<i32>,
+}
 
-        groups.entry(object_id).or_default().push(RawRow {
-            attribute,
-            order,
-            name1,
-            name2,
-            expression,
-            flag,
-            extra,
-        });
-    }
+// ---------------------------------------------------------------------------
+// build_query_defs
+// ---------------------------------------------------------------------------
 
-    // Build query name map from catalog
-    let query_name_map: BTreeMap<u32, String> = catalog
-        .iter()
-        .filter(|e| e.object_type == ObjectType::Query)
-        .map(|e| (e.table_page, e.name.clone()))
-        .collect();
-
+fn build_query_defs(
+    groups: BTreeMap<i32, Vec<RawRow>>,
+    query_name_map: &BTreeMap<u32, String>,
+) -> Vec<QueryDef> {
     let mut queries = Vec::new();
     for (object_id, mut raw_rows) in groups {
-        // Sort rows by Order field
         raw_rows.sort_by(|a, b| a.order.cmp(&b.order));
 
-        // Find TYPE row to determine query type
         let type_row = raw_rows.iter().find(|r| r.attribute == ATTR_TYPE);
         let query_type = match type_row
             .and_then(|r| r.flag)
@@ -234,7 +228,6 @@ pub fn read_queries(reader: &mut PageReader) -> Result<Vec<QueryDef>, FileError>
             None => continue,
         };
 
-        // Match to catalog name
         let page_key = (object_id as u32) & 0x00FF_FFFF;
         let name = match query_name_map.get(&page_key) {
             Some(n) => n.clone(),
@@ -259,8 +252,88 @@ pub fn read_queries(reader: &mut PageReader) -> Result<Vec<QueryDef>, FileError>
             rows,
         });
     }
+    queries
+}
 
-    Ok(queries)
+// ---------------------------------------------------------------------------
+// read_queries
+// ---------------------------------------------------------------------------
+
+/// Read all query definitions from the MSysQueries system table.
+///
+/// Returns an empty `Vec` if the table does not exist.
+pub fn read_queries(reader: &mut PageReader) -> Result<Vec<QueryDef>, FileError> {
+    let catalog = read_catalog(reader)?;
+
+    let queries_entry = catalog.iter().find(|e| {
+        e.name == "MSysQueries"
+            && matches!(e.object_type, ObjectType::Table | ObjectType::SystemTable)
+    });
+    let queries_page = match queries_entry {
+        Some(e) => e.table_page,
+        None => return Ok(Vec::new()),
+    };
+
+    let tdef = table::read_table_def(reader, "MSysQueries", queries_page)?;
+    let result = data::read_table_rows(reader, &tdef)?;
+
+    let ci = resolve_query_columns(&tdef.columns)?;
+
+    // Group rows by ObjectId
+    let mut groups: BTreeMap<i32, Vec<RawRow>> = BTreeMap::new();
+
+    for row in &result.rows {
+        let object_id = match get_long(row, ci.object_id) {
+            Some(v) => v,
+            None => continue,
+        };
+        let attribute = match get_byte(row, ci.attribute) {
+            Some(v) => v,
+            None => continue,
+        };
+        let order = ci
+            .order
+            .and_then(|i| get_binary(row, i))
+            .map(|b| b.to_vec())
+            .unwrap_or_default();
+        let name1 = ci
+            .name1
+            .and_then(|i| get_text(row, i))
+            .map(|s| s.to_string());
+        let name2 = ci
+            .name2
+            .and_then(|i| get_text(row, i))
+            .map(|s| s.to_string());
+        let expression = ci.expression.and_then(|i| get_text(row, i)).and_then(|s| {
+            let trimmed = s.trim_end_matches('\0');
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        });
+        let flag = ci.flag.and_then(|i| get_int(row, i));
+        let extra = ci.extra.and_then(|i| get_long(row, i));
+
+        groups.entry(object_id).or_default().push(RawRow {
+            attribute,
+            order,
+            name1,
+            name2,
+            expression,
+            flag,
+            extra,
+        });
+    }
+
+    // Build query name map from catalog
+    let query_name_map: BTreeMap<u32, String> = catalog
+        .iter()
+        .filter(|e| e.object_type == ObjectType::Query)
+        .map(|e| (e.table_page, e.name.clone()))
+        .collect();
+
+    Ok(build_query_defs(groups, &query_name_map))
 }
 
 // ---------------------------------------------------------------------------
@@ -1355,5 +1428,68 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let queries = read_queries(&mut reader).unwrap();
         assert!(queries.is_empty(), "testV2003.mdb should have no queries");
+    }
+
+    // -- resolve_query_columns tests ------------------------------------------
+
+    fn make_col(name: &str) -> table::ColumnDef {
+        table::ColumnDef {
+            name: name.to_string(),
+            col_type: crate::format::ColumnType::Long,
+            col_num: 0,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size: 4,
+            flags: 0,
+            is_fixed: true,
+            precision: 0,
+            scale: 0,
+        }
+    }
+
+    #[test]
+    fn resolve_all_columns_present() {
+        let columns = vec![
+            make_col("ObjectId"),
+            make_col("Attribute"),
+            make_col("Order"),
+            make_col("Name1"),
+            make_col("Name2"),
+            make_col("Expression"),
+            make_col("Flag"),
+            make_col("LvExtra"),
+        ];
+        let ci = resolve_query_columns(&columns).unwrap();
+        assert_eq!(ci.object_id, 0);
+        assert_eq!(ci.attribute, 1);
+        assert_eq!(ci.order, Some(2));
+        assert_eq!(ci.name1, Some(3));
+        assert_eq!(ci.name2, Some(4));
+        assert_eq!(ci.expression, Some(5));
+        assert_eq!(ci.flag, Some(6));
+        assert_eq!(ci.extra, Some(7));
+    }
+
+    #[test]
+    fn resolve_missing_object_id() {
+        let columns = vec![make_col("Attribute")];
+        assert!(resolve_query_columns(&columns).is_err());
+    }
+
+    #[test]
+    fn resolve_missing_attribute() {
+        let columns = vec![make_col("ObjectId")];
+        assert!(resolve_query_columns(&columns).is_err());
+    }
+
+    #[test]
+    fn resolve_optional_columns_missing() {
+        let columns = vec![make_col("ObjectId"), make_col("Attribute")];
+        let ci = resolve_query_columns(&columns).unwrap();
+        assert_eq!(ci.object_id, 0);
+        assert_eq!(ci.attribute, 1);
+        assert_eq!(ci.order, None);
+        assert_eq!(ci.name1, None);
+        assert_eq!(ci.expression, None);
     }
 }

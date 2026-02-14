@@ -1,6 +1,6 @@
 use crate::encoding;
 use crate::file::{FileError, PageReader};
-use crate::format::{ColumnType, PageType, MAX_INDEX_COLUMNS};
+use crate::format::{ColumnType, JetFormat, PageType, MAX_INDEX_COLUMNS};
 use crate::map;
 
 // ---------------------------------------------------------------------------
@@ -92,6 +92,25 @@ pub fn is_replication_column(col: &ColumnDef) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Private types
+// ---------------------------------------------------------------------------
+
+/// Physical index entry: (columns, flags, first_data_page).
+type PhysicalIndexEntry = (Vec<IndexColumn>, u8, u32);
+
+/// Logical index entry parsed from TDEF section [6].
+struct LogicalIndex {
+    index_num: u16,
+    index_col_entry: u32,
+    fk_index_type: u8,
+    fk_index_number: u32,
+    fk_table_page: u32,
+    update_action: u8,
+    delete_action: u8,
+    index_type: u8,
+}
+
+// ---------------------------------------------------------------------------
 // read_table_def
 // ---------------------------------------------------------------------------
 
@@ -130,271 +149,34 @@ pub fn read_table_def(
     // 3d. Column entries
     let col_entry_start =
         format.tdef_index_entries_pos + (num_real_idxs as usize) * format.tdef_index_entry_span;
-    let col_entry_span = format.tdef_column_entry_span;
+    let mut columns = parse_column_entries(
+        &tdef_buf,
+        col_entry_start,
+        format.tdef_column_entry_span,
+        num_cols as usize,
+        is_jet3,
+        format,
+    )?;
 
-    let mut columns = Vec::with_capacity(num_cols as usize);
-    for i in 0..num_cols as usize {
-        let offset = col_entry_start + i * col_entry_span;
-        let col = tdef_buf
-            .get(offset..offset + col_entry_span)
-            .ok_or(FileError::InvalidTableDef {
-                reason: "column entry extends beyond TDEF buffer",
-            })?;
-
-        let col_type = ColumnType::try_from(col[0])?;
-
-        // col_num: Jet3 = 1 byte, Jet4 = 2 bytes LE
-        // var_col_num: always 2 bytes LE
-        let (col_num, var_col_num) = if is_jet3 {
-            (
-                col[format.coldef_number_pos] as u16,
-                u16::from_le_bytes([
-                    col[format.coldef_var_col_index_pos],
-                    col[format.coldef_var_col_index_pos + 1],
-                ]),
-            )
-        } else {
-            (
-                u16::from_le_bytes([
-                    col[format.coldef_number_pos],
-                    col[format.coldef_number_pos + 1],
-                ]),
-                u16::from_le_bytes([
-                    col[format.coldef_var_col_index_pos],
-                    col[format.coldef_var_col_index_pos + 1],
-                ]),
-            )
-        };
-
-        let flags = col[format.coldef_flags_pos];
-        let is_fixed = (flags & crate::format::column_flags::FIXED) != 0;
-
-        // fixed_offset: always 2 bytes LE
-        let fixed_offset = u16::from_le_bytes([
-            col[format.coldef_fixed_data_pos],
-            col[format.coldef_fixed_data_pos + 1],
-        ]);
-
-        let col_size = u16::from_le_bytes([
-            col[format.coldef_length_pos],
-            col[format.coldef_length_pos + 1],
-        ]);
-
-        let scale = col[format.coldef_scale_pos];
-        let precision = col[format.coldef_precision_pos];
-
-        columns.push(ColumnDef {
-            name: String::new(), // filled in step 3e
-            col_type,
-            col_num,
-            var_col_num,
-            fixed_offset,
-            col_size,
-            flags,
-            is_fixed,
-            scale,
-            precision,
-        });
+    // 3e. Column names
+    let mut offset = col_entry_start + (num_cols as usize) * format.tdef_column_entry_span;
+    let (col_names, new_offset) = read_names(&tdef_buf, offset, num_cols as usize, is_jet3)?;
+    for (col, col_name) in columns.iter_mut().zip(col_names) {
+        col.name = col_name;
     }
+    offset = new_offset;
 
-    // 3e. Column names (immediately after column entries)
-    // TDEF layout: real_index_entries → column_entries → column_names
-    let mut name_offset = col_entry_start + (num_cols as usize) * col_entry_span;
+    // 3f. Index column definitions
+    let (mut idx_col_defs, new_offset) =
+        parse_index_column_defs(&tdef_buf, offset, num_real_idxs, format)?;
+    offset = new_offset;
 
-    for col in &mut columns {
-        if is_jet3 {
-            // Jet3: [len: u8][Latin-1 bytes]
-            if name_offset >= tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "column name length extends beyond TDEF buffer",
-                });
-            }
-            let name_len = tdef_buf[name_offset] as usize;
-            name_offset += 1;
-            let name_end = name_offset + name_len;
-            if name_end > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "column name extends beyond TDEF buffer",
-                });
-            }
-            col.name = encoding::decode_latin1(&tdef_buf[name_offset..name_end]);
-            name_offset = name_end;
-        } else {
-            // Jet4: [len: u16 LE][UTF-16LE bytes]
-            if name_offset + 2 > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "column name length extends beyond TDEF buffer",
-                });
-            }
-            let name_len = u16::from_le_bytes([
-                tdef_buf[name_offset],
-                tdef_buf[name_offset + 1],
-            ]) as usize;
-            name_offset += 2;
-            let name_end = name_offset + name_len;
-            if name_end > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "column name extends beyond TDEF buffer",
-                });
-            }
-            col.name = encoding::decode_utf16le(&tdef_buf[name_offset..name_end])
-                .map_err(|_| FileError::InvalidTableDef {
-                    reason: "invalid UTF-16LE column name",
-                })?;
-            name_offset = name_end;
-        }
-    }
-
-    // 3f. Section [5]: Index column definitions (num_real_idxs entries)
-    //     Each entry: Jet3=39B, Jet4=52B
-    let mut idx_col_defs: Vec<(Vec<IndexColumn>, u8, u32)> =
-        Vec::with_capacity(num_real_idxs as usize);
-
-    for _ in 0..num_real_idxs {
-        // Verify the entire entry fits within the buffer (M-3 overflow protection)
-        if name_offset + format.idx_col_block_size > tdef_buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "index column definition entry extends beyond TDEF buffer",
-            });
-        }
-
-        // Skip type marker (Jet4 only)
-        name_offset += format.idx_col_skip_before;
-
-        // Read up to MAX_INDEX_COLUMNS column slots
-        let mut idx_columns = Vec::new();
-        for _ in 0..MAX_INDEX_COLUMNS {
-            if name_offset + 3 > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "index column slot extends beyond TDEF buffer",
-                });
-            }
-            let col_id = u16::from_le_bytes([
-                tdef_buf[name_offset],
-                tdef_buf[name_offset + 1],
-            ]);
-            let order_flag = tdef_buf[name_offset + 2];
-            name_offset += 3;
-
-            if col_id != 0xFFFF {
-                let order = if order_flag == 0x01 {
-                    IndexColumnOrder::Ascending
-                } else {
-                    IndexColumnOrder::Descending
-                };
-                idx_columns.push(IndexColumn {
-                    col_num: col_id,
-                    order,
-                });
-            }
-        }
-
-        // Usage map reference (4 bytes)
-        if name_offset + 8 > tdef_buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "index usage map / first page extends beyond TDEF buffer",
-            });
-        }
-        name_offset += 4;
-
-        // First index page — B-tree root page number (4 bytes)
-        let first_pg = u32::from_le_bytes([
-            tdef_buf[name_offset],
-            tdef_buf[name_offset + 1],
-            tdef_buf[name_offset + 2],
-            tdef_buf[name_offset + 3],
-        ]);
-        name_offset += 4;
-
-        // Jet4 only: 4 bytes unknown
-        name_offset += format.idx_col_skip_before_flags;
-
-        // flags (1 byte)
-        // The flags field is documented as 2 bytes in some references,
-        // but only the low byte carries meaningful flag bits (UNIQUE, IGNORE_NULLS, REQUIRED).
-        // The high byte is always 0x00 in practice.
-        if name_offset >= tdef_buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "index flags extends beyond TDEF buffer",
-            });
-        }
-        let idx_flags = tdef_buf[name_offset];
-        name_offset += 1;
-
-        // Jet4 only: 5 bytes unknown
-        name_offset += format.idx_col_skip_after_flags;
-
-        idx_col_defs.push((idx_columns, idx_flags, first_pg));
-    }
-
-    // 3g. Section [6]: Logical index definitions (num_idxs entries)
-    //     Each entry: Jet3=20B, Jet4=28B
-    struct LogicalIndex {
-        index_num: u16,
-        index_col_entry: u32,
-        fk_index_type: u8,
-        fk_index_number: u32,
-        fk_table_page: u32,
-        update_action: u8,
-        delete_action: u8,
-        index_type: u8,
-    }
-
-    let mut logical_indexes: Vec<LogicalIndex> = Vec::with_capacity(num_idxs as usize);
-
-    for _ in 0..num_idxs {
-        let entry_start = name_offset;
-        if entry_start + format.idx_info_block_size > tdef_buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "logical index entry extends beyond TDEF buffer",
-            });
-        }
-        let entry = &tdef_buf[entry_start..entry_start + format.idx_info_block_size];
-
-        // Skip type marker (Jet4 only)
-        let skip = format.idx_info_skip_before;
-
-        let index_num = u16::from_le_bytes([entry[skip], entry[skip + 1]]);
-        let index_col_entry = u32::from_le_bytes([
-            entry[skip + 4],
-            entry[skip + 5],
-            entry[skip + 6],
-            entry[skip + 7],
-        ]);
-        let fk_index_type = entry[skip + 8];
-        let fk_index_number = u32::from_le_bytes([
-            entry[skip + 9],
-            entry[skip + 10],
-            entry[skip + 11],
-            entry[skip + 12],
-        ]);
-        let fk_table_page = u32::from_le_bytes([
-            entry[skip + 13],
-            entry[skip + 14],
-            entry[skip + 15],
-            entry[skip + 16],
-        ]);
-        let update_action = entry[skip + 17];
-        let delete_action = entry[skip + 18];
-        let index_type = entry[format.idx_info_type_offset];
-
-        logical_indexes.push(LogicalIndex {
-            index_num,
-            index_col_entry,
-            fk_index_type,
-            fk_index_number,
-            fk_table_page,
-            update_action,
-            delete_action,
-            index_type,
-        });
-
-        name_offset += format.idx_info_block_size;
-    }
+    // 3g. Logical index definitions
+    let (logical_indexes, new_offset) =
+        parse_logical_indexes(&tdef_buf, offset, num_idxs, format)?;
+    offset = new_offset;
 
     // Adjust idx_col_defs length based on actual non-FK count in section [6].
-    // This adjustment is applied (num_real_idxs vs type!=2 count);
-    // without it, corrupt databases may cause out-of-bounds lookups.
     let non_fk_count = logical_indexes
         .iter()
         .filter(|li| li.index_type != crate::format::index_type::FOREIGN_KEY)
@@ -403,99 +185,11 @@ pub fn read_table_def(
         idx_col_defs.truncate(non_fk_count);
     }
 
-    // 3h. Section [7]: Index names (num_idxs entries)
-    let mut idx_names: Vec<String> = Vec::with_capacity(num_idxs as usize);
-    for _ in 0..num_idxs {
-        if is_jet3 {
-            if name_offset >= tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "index name length extends beyond TDEF buffer",
-                });
-            }
-            let name_len = tdef_buf[name_offset] as usize;
-            name_offset += 1;
-            let name_end = name_offset + name_len;
-            if name_end > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "index name extends beyond TDEF buffer",
-                });
-            }
-            idx_names.push(encoding::decode_latin1(&tdef_buf[name_offset..name_end]));
-            name_offset = name_end;
-        } else {
-            if name_offset + 2 > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "index name length extends beyond TDEF buffer",
-                });
-            }
-            let name_len = u16::from_le_bytes([
-                tdef_buf[name_offset],
-                tdef_buf[name_offset + 1],
-            ]) as usize;
-            name_offset += 2;
-            let name_end = name_offset + name_len;
-            if name_end > tdef_buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "index name extends beyond TDEF buffer",
-                });
-            }
-            idx_names.push(
-                encoding::decode_utf16le(&tdef_buf[name_offset..name_end])
-                    .map_err(|_| FileError::InvalidTableDef {
-                        reason: "invalid UTF-16LE index name",
-                    })?,
-            );
-            name_offset = name_end;
-        }
-    }
+    // 3h. Index names
+    let (idx_names, _) = read_names(&tdef_buf, offset, num_idxs as usize, is_jet3)?;
 
-    // 3i. Combine sections [5][6][7] into IndexDef entries
-    let mut indexes: Vec<IndexDef> = Vec::with_capacity(num_idxs as usize);
-    for (i, logical) in logical_indexes.iter().enumerate() {
-        let name = idx_names.get(i).cloned().unwrap_or_default();
-
-        if logical.index_type == crate::format::index_type::FOREIGN_KEY {
-            // FK reference — no physical index columns
-            indexes.push(IndexDef {
-                name,
-                index_num: logical.index_num,
-                index_type: logical.index_type,
-                columns: Vec::new(),
-                flags: 0,
-                first_data_page: 0,
-                foreign_key: Some(ForeignKeyReference {
-                    fk_index_type: logical.fk_index_type,
-                    fk_index_number: logical.fk_index_number,
-                    fk_table_page: logical.fk_table_page,
-                    update_action: logical.update_action,
-                    delete_action: logical.delete_action,
-                }),
-            });
-        } else {
-            // Normal/PK — look up section [5] entry by index_col_entry
-            let col_entry_idx = logical.index_col_entry as usize;
-            let (cols, flags, first_pg) = if col_entry_idx < idx_col_defs.len() {
-                idx_col_defs[col_entry_idx].clone()
-            } else {
-                eprintln!(
-                    "warning: index '{}' references out-of-range column def entry {} (max {})",
-                    name,
-                    col_entry_idx,
-                    idx_col_defs.len()
-                );
-                (Vec::new(), 0, 0)
-            };
-            indexes.push(IndexDef {
-                name,
-                index_num: logical.index_num,
-                index_type: logical.index_type,
-                columns: cols,
-                flags,
-                first_data_page: first_pg,
-                foreign_key: None,
-            });
-        }
-    }
+    // 3i. Build index defs
+    let indexes = build_index_defs(&logical_indexes, &idx_col_defs, idx_names);
 
     // 3j. Sort columns by col_num
     columns.sort_by_key(|c| c.col_num);
@@ -540,6 +234,324 @@ fn build_tdef_buffer(reader: &mut PageReader, tdef_page: u32) -> Result<Vec<u8>,
     }
 
     Ok(buf)
+}
+
+/// Read a sequence of names from the TDEF buffer.
+///
+/// Jet3 uses `[len: u8][Latin-1 bytes]`, Jet4+ uses `[len: u16 LE][UTF-16LE bytes]`.
+/// Returns the names and the offset after the last name.
+fn read_names(
+    buf: &[u8],
+    mut offset: usize,
+    count: usize,
+    is_jet3: bool,
+) -> Result<(Vec<String>, usize), FileError> {
+    let mut names = Vec::with_capacity(count);
+    for _ in 0..count {
+        if is_jet3 {
+            if offset >= buf.len() {
+                return Err(FileError::InvalidTableDef {
+                    reason: "name length extends beyond TDEF buffer",
+                });
+            }
+            let name_len = buf[offset] as usize;
+            offset += 1;
+            let name_end = offset + name_len;
+            if name_end > buf.len() {
+                return Err(FileError::InvalidTableDef {
+                    reason: "name extends beyond TDEF buffer",
+                });
+            }
+            names.push(encoding::decode_latin1(&buf[offset..name_end]));
+            offset = name_end;
+        } else {
+            if offset + 2 > buf.len() {
+                return Err(FileError::InvalidTableDef {
+                    reason: "name length extends beyond TDEF buffer",
+                });
+            }
+            let name_len =
+                u16::from_le_bytes([buf[offset], buf[offset + 1]]) as usize;
+            offset += 2;
+            let name_end = offset + name_len;
+            if name_end > buf.len() {
+                return Err(FileError::InvalidTableDef {
+                    reason: "name extends beyond TDEF buffer",
+                });
+            }
+            names.push(
+                encoding::decode_utf16le(&buf[offset..name_end]).map_err(|_| {
+                    FileError::InvalidTableDef {
+                        reason: "invalid UTF-16LE name",
+                    }
+                })?,
+            );
+            offset = name_end;
+        }
+    }
+    Ok((names, offset))
+}
+
+/// Parse column definition entries from the TDEF buffer.
+fn parse_column_entries(
+    buf: &[u8],
+    start: usize,
+    span: usize,
+    count: usize,
+    is_jet3: bool,
+    format: &JetFormat,
+) -> Result<Vec<ColumnDef>, FileError> {
+    let mut columns = Vec::with_capacity(count);
+    for i in 0..count {
+        let offset = start + i * span;
+        let col = buf
+            .get(offset..offset + span)
+            .ok_or(FileError::InvalidTableDef {
+                reason: "column entry extends beyond TDEF buffer",
+            })?;
+
+        let col_type = ColumnType::try_from(col[0])?;
+
+        let (col_num, var_col_num) = if is_jet3 {
+            (
+                col[format.coldef_number_pos] as u16,
+                u16::from_le_bytes([
+                    col[format.coldef_var_col_index_pos],
+                    col[format.coldef_var_col_index_pos + 1],
+                ]),
+            )
+        } else {
+            (
+                u16::from_le_bytes([
+                    col[format.coldef_number_pos],
+                    col[format.coldef_number_pos + 1],
+                ]),
+                u16::from_le_bytes([
+                    col[format.coldef_var_col_index_pos],
+                    col[format.coldef_var_col_index_pos + 1],
+                ]),
+            )
+        };
+
+        let flags = col[format.coldef_flags_pos];
+        let is_fixed = (flags & crate::format::column_flags::FIXED) != 0;
+
+        let fixed_offset = u16::from_le_bytes([
+            col[format.coldef_fixed_data_pos],
+            col[format.coldef_fixed_data_pos + 1],
+        ]);
+
+        let col_size = u16::from_le_bytes([
+            col[format.coldef_length_pos],
+            col[format.coldef_length_pos + 1],
+        ]);
+
+        let scale = col[format.coldef_scale_pos];
+        let precision = col[format.coldef_precision_pos];
+
+        columns.push(ColumnDef {
+            name: String::new(), // filled by read_names
+            col_type,
+            col_num,
+            var_col_num,
+            fixed_offset,
+            col_size,
+            flags,
+            is_fixed,
+            scale,
+            precision,
+        });
+    }
+    Ok(columns)
+}
+
+/// Parse index column definitions from TDEF section [5].
+fn parse_index_column_defs(
+    buf: &[u8],
+    mut offset: usize,
+    count: u32,
+    format: &JetFormat,
+) -> Result<(Vec<PhysicalIndexEntry>, usize), FileError> {
+    let mut idx_col_defs = Vec::with_capacity(count as usize);
+
+    for _ in 0..count {
+        if offset + format.idx_col_block_size > buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "index column definition entry extends beyond TDEF buffer",
+            });
+        }
+
+        offset += format.idx_col_skip_before;
+
+        let mut idx_columns = Vec::new();
+        for _ in 0..MAX_INDEX_COLUMNS {
+            if offset + 3 > buf.len() {
+                return Err(FileError::InvalidTableDef {
+                    reason: "index column slot extends beyond TDEF buffer",
+                });
+            }
+            let col_id = u16::from_le_bytes([buf[offset], buf[offset + 1]]);
+            let order_flag = buf[offset + 2];
+            offset += 3;
+
+            if col_id != 0xFFFF {
+                let order = if order_flag == 0x01 {
+                    IndexColumnOrder::Ascending
+                } else {
+                    IndexColumnOrder::Descending
+                };
+                idx_columns.push(IndexColumn {
+                    col_num: col_id,
+                    order,
+                });
+            }
+        }
+
+        if offset + 8 > buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "index usage map / first page extends beyond TDEF buffer",
+            });
+        }
+        offset += 4;
+
+        let first_pg = u32::from_le_bytes([
+            buf[offset],
+            buf[offset + 1],
+            buf[offset + 2],
+            buf[offset + 3],
+        ]);
+        offset += 4;
+
+        offset += format.idx_col_skip_before_flags;
+
+        if offset >= buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "index flags extends beyond TDEF buffer",
+            });
+        }
+        let idx_flags = buf[offset];
+        offset += 1;
+
+        offset += format.idx_col_skip_after_flags;
+
+        idx_col_defs.push((idx_columns, idx_flags, first_pg));
+    }
+
+    Ok((idx_col_defs, offset))
+}
+
+/// Parse logical index definitions from TDEF section [6].
+fn parse_logical_indexes(
+    buf: &[u8],
+    mut offset: usize,
+    count: u32,
+    format: &JetFormat,
+) -> Result<(Vec<LogicalIndex>, usize), FileError> {
+    let mut logical_indexes = Vec::with_capacity(count as usize);
+
+    for _ in 0..count {
+        let entry_start = offset;
+        if entry_start + format.idx_info_block_size > buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "logical index entry extends beyond TDEF buffer",
+            });
+        }
+        let entry = &buf[entry_start..entry_start + format.idx_info_block_size];
+
+        let skip = format.idx_info_skip_before;
+
+        let index_num = u16::from_le_bytes([entry[skip], entry[skip + 1]]);
+        let index_col_entry = u32::from_le_bytes([
+            entry[skip + 4],
+            entry[skip + 5],
+            entry[skip + 6],
+            entry[skip + 7],
+        ]);
+        let fk_index_type = entry[skip + 8];
+        let fk_index_number = u32::from_le_bytes([
+            entry[skip + 9],
+            entry[skip + 10],
+            entry[skip + 11],
+            entry[skip + 12],
+        ]);
+        let fk_table_page = u32::from_le_bytes([
+            entry[skip + 13],
+            entry[skip + 14],
+            entry[skip + 15],
+            entry[skip + 16],
+        ]);
+        let update_action = entry[skip + 17];
+        let delete_action = entry[skip + 18];
+        let index_type = entry[format.idx_info_type_offset];
+
+        logical_indexes.push(LogicalIndex {
+            index_num,
+            index_col_entry,
+            fk_index_type,
+            fk_index_number,
+            fk_table_page,
+            update_action,
+            delete_action,
+            index_type,
+        });
+
+        offset += format.idx_info_block_size;
+    }
+
+    Ok((logical_indexes, offset))
+}
+
+/// Combine logical indexes, column definitions, and names into `IndexDef` entries.
+fn build_index_defs(
+    logical_indexes: &[LogicalIndex],
+    idx_col_defs: &[PhysicalIndexEntry],
+    idx_names: Vec<String>,
+) -> Vec<IndexDef> {
+    let mut indexes = Vec::with_capacity(logical_indexes.len());
+    for (i, logical) in logical_indexes.iter().enumerate() {
+        let name = idx_names.get(i).cloned().unwrap_or_default();
+
+        if logical.index_type == crate::format::index_type::FOREIGN_KEY {
+            indexes.push(IndexDef {
+                name,
+                index_num: logical.index_num,
+                index_type: logical.index_type,
+                columns: Vec::new(),
+                flags: 0,
+                first_data_page: 0,
+                foreign_key: Some(ForeignKeyReference {
+                    fk_index_type: logical.fk_index_type,
+                    fk_index_number: logical.fk_index_number,
+                    fk_table_page: logical.fk_table_page,
+                    update_action: logical.update_action,
+                    delete_action: logical.delete_action,
+                }),
+            });
+        } else {
+            let col_entry_idx = logical.index_col_entry as usize;
+            let (cols, flags, first_pg) = if col_entry_idx < idx_col_defs.len() {
+                idx_col_defs[col_entry_idx].clone()
+            } else {
+                eprintln!(
+                    "warning: index '{}' references out-of-range column def entry {} (max {})",
+                    name,
+                    col_entry_idx,
+                    idx_col_defs.len()
+                );
+                (Vec::new(), 0, 0)
+            };
+            indexes.push(IndexDef {
+                name,
+                index_num: logical.index_num,
+                index_type: logical.index_type,
+                columns: cols,
+                flags,
+                first_data_page: first_pg,
+                foreign_key: None,
+            });
+        }
+    }
+    indexes
 }
 
 fn read_u16(buf: &[u8], pos: usize) -> Result<u16, FileError> {
@@ -877,5 +889,89 @@ mod tests {
                 "index name should not be empty"
             );
         }
+    }
+
+    // -- read_names tests -----------------------------------------------------
+
+    #[test]
+    fn read_names_jet3_latin1() {
+        // Jet3 format: [len: u8][Latin-1 bytes]
+        let buf = [3, b'F', b'o', b'o', 3, b'B', b'a', b'r'];
+        let (names, offset) = read_names(&buf, 0, 2, true).unwrap();
+        assert_eq!(names, vec!["Foo", "Bar"]);
+        assert_eq!(offset, 8);
+    }
+
+    #[test]
+    fn read_names_jet4_utf16le() {
+        // Jet4 format: [len: u16 LE][UTF-16LE bytes]
+        // "Ab" = 4 bytes UTF-16LE
+        let buf = [
+            4, 0, // len=4
+            b'A', 0, b'b', 0, // "Ab"
+            2, 0, // len=2
+            b'X', 0, // "X"
+        ];
+        let (names, offset) = read_names(&buf, 0, 2, false).unwrap();
+        assert_eq!(names, vec!["Ab", "X"]);
+        assert_eq!(offset, 10);
+    }
+
+    #[test]
+    fn read_names_boundary_error() {
+        // Buffer too short for the name length prefix
+        let buf = [3, b'A', b'B'];
+        let result = read_names(&buf, 0, 1, true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn read_names_empty_count() {
+        let buf = [];
+        let (names, offset) = read_names(&buf, 0, 0, true).unwrap();
+        assert!(names.is_empty());
+        assert_eq!(offset, 0);
+    }
+
+    // -- parse_column_entries tests -------------------------------------------
+
+    #[test]
+    fn parse_column_entries_jet3() {
+        use crate::format::JET3;
+        // Build a minimal Jet3 column entry (18 bytes)
+        let mut entry = vec![0u8; JET3.tdef_column_entry_span];
+        entry[0] = ColumnType::Long.to_byte(); // col_type
+        entry[JET3.coldef_number_pos] = 5; // col_num (1 byte for Jet3)
+        entry[JET3.coldef_flags_pos] = column_flags::FIXED;
+        entry[JET3.coldef_length_pos] = 4;
+        entry[JET3.coldef_length_pos + 1] = 0;
+
+        let cols = parse_column_entries(&entry, 0, JET3.tdef_column_entry_span, 1, true, &JET3).unwrap();
+        assert_eq!(cols.len(), 1);
+        assert_eq!(cols[0].col_type, ColumnType::Long);
+        assert_eq!(cols[0].col_num, 5);
+        assert!(cols[0].is_fixed);
+        assert_eq!(cols[0].col_size, 4);
+    }
+
+    #[test]
+    fn parse_column_entries_jet4() {
+        use crate::format::JET4;
+        // Build a minimal Jet4 column entry (25 bytes)
+        let mut entry = vec![0u8; JET4.tdef_column_entry_span];
+        entry[0] = ColumnType::Text.to_byte();
+        // col_num: 2 bytes LE
+        entry[JET4.coldef_number_pos] = 3;
+        entry[JET4.coldef_number_pos + 1] = 0;
+        entry[JET4.coldef_flags_pos] = column_flags::NULLABLE;
+        entry[JET4.coldef_length_pos] = 0xFF;
+        entry[JET4.coldef_length_pos + 1] = 0;
+
+        let cols = parse_column_entries(&entry, 0, JET4.tdef_column_entry_span, 1, false, &JET4).unwrap();
+        assert_eq!(cols.len(), 1);
+        assert_eq!(cols[0].col_type, ColumnType::Text);
+        assert_eq!(cols[0].col_num, 3);
+        assert!(!cols[0].is_fixed);
+        assert_eq!(cols[0].col_size, 255);
     }
 }
