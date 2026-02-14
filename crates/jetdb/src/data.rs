@@ -109,7 +109,7 @@ pub fn read_table_rows(
 
             let mut values = Vec::with_capacity(table.columns.len());
             for col in &table.columns {
-                let val = read_column_value(&cracked, col, is_jet3);
+                let val = read_column_value(&cracked, col, is_jet3, reader);
                 values.push(val);
             }
             rows.push(values);
@@ -353,7 +353,12 @@ fn is_null(null_mask: &[u8], col_num: u16) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Read a single column value from a cracked row.
-fn read_column_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) -> Value {
+fn read_column_value(
+    cracked: &CrackedRow<'_>,
+    col: &ColumnDef,
+    is_jet3: bool,
+    reader: &mut PageReader,
+) -> Value {
     // Boolean is special: value comes from the null mask
     if col.col_type == ColumnType::Boolean {
         return Value::Bool(!is_null(cracked.null_mask, col.col_num));
@@ -367,7 +372,7 @@ fn read_column_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) -
     if col.is_fixed {
         read_fixed_value(cracked, col, is_jet3)
     } else {
-        read_variable_value(cracked, col, is_jet3)
+        read_variable_value(cracked, col, is_jet3, reader)
     }
 }
 
@@ -479,7 +484,12 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
 }
 
 /// Read a variable-length column value.
-fn read_variable_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) -> Value {
+fn read_variable_value(
+    cracked: &CrackedRow<'_>,
+    col: &ColumnDef,
+    is_jet3: bool,
+    reader: &mut PageReader,
+) -> Value {
     // var_offsets is read backwards from vcc_pos:
     // Data for var col k: row_data[var_offsets[k]..var_offsets[k+1]]
     let var_idx = col.var_col_num as usize;
@@ -499,67 +509,130 @@ fn read_variable_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool)
     let var_data = &cracked.row_data[start..end];
 
     match col.col_type {
-        ColumnType::Text => {
-            match encoding::decode_text(var_data, is_jet3) {
-                Ok(s) => Value::Text(s),
-                Err(_) => Value::Null,
-            }
-        }
+        ColumnType::Text => match encoding::decode_text(var_data, is_jet3) {
+            Ok(s) => Value::Text(s),
+            Err(_) => Value::Null,
+        },
         ColumnType::Binary => Value::Binary(var_data.to_vec()),
-        ColumnType::Memo => read_memo_value(var_data, is_jet3),
-        ColumnType::Ole => Value::Null, // not yet supported
+        ColumnType::Memo => read_memo_value(var_data, is_jet3, Some(reader)),
+        ColumnType::Ole => read_ole_value(var_data, Some(reader)),
         _ => Value::Null,
     }
 }
 
 // ---------------------------------------------------------------------------
-// Memo / OLE long value types
+// LVAL (Long Value) types
 // ---------------------------------------------------------------------------
 
+/// Multi-page overflow — data split across multiple LVAL pages.
+const LVAL_MULTI_PAGE: u32 = 0x00000000;
 /// Inline long value — data stored directly in the row.
-const MEMO_INLINE: u32 = 0x80000000;
+const LVAL_INLINE: u32 = 0x80000000;
 /// Single-page overflow — data stored on one other page.
-const MEMO_SINGLE_PAGE: u32 = 0x40000000;
+const LVAL_SINGLE_PAGE: u32 = 0x40000000;
 /// Mask for the type flag bits.
-const MEMO_TYPE_MASK: u32 = 0xC0000000;
+const LVAL_TYPE_MASK: u32 = 0xC0000000;
 /// Byte offset where inline long value data begins.
 /// Inline layout: `[length_with_flags(4B)] [lval_dp(4B)] [unknown(4B)] [data...]`
-const MEMO_INLINE_HEADER: usize = 12;
+const LVAL_INLINE_HEADER: usize = 12;
 
-/// Read a Memo field value.
+/// Read raw bytes from an LVAL (Long Value) field.
 ///
-/// Memo/OLE variable data starts with a 4-byte `length_with_flags` (u32 LE):
+/// LVAL variable data starts with a 4-byte `length_with_flags` (u32 LE):
 /// - bit 31 (0x80000000): LONG_VALUE_TYPE_THIS_PAGE — inline data
 /// - bit 30 (0x40000000): LONG_VALUE_TYPE_OTHER_PAGE — single page reference
 /// - both 0: LONG_VALUE_TYPE_OTHER_PAGES — multi-page chain
 ///
 /// Inline layout: `[length_with_flags(4B)] [lval_dp(4B)] [unknown(4B)] [data...]`
-fn read_memo_value(var_data: &[u8], is_jet3: bool) -> Value {
+///
+/// Single-page (0x40): `pg_row` at `var_data[4..8]` points to the row on an
+/// LVAL page whose data is the entire field value.
+///
+/// Multi-page (0x00): `pg_row` at `var_data[4..8]` is the first chunk.
+/// Each chunk's first 4 bytes are the next `pg_row` (0 = end); bytes after
+/// offset 4 are appended to the result buffer.
+fn read_lval_data(
+    var_data: &[u8],
+    reader: Option<&mut PageReader>,
+) -> Option<Vec<u8>> {
     if var_data.len() < 4 {
-        return Value::Null;
+        return None;
     }
-    let length_with_flags =
-        u32::from_le_bytes(var_data[..4].try_into().unwrap());
-    let memo_type = length_with_flags & MEMO_TYPE_MASK;
-    let data_len = (length_with_flags & !MEMO_TYPE_MASK) as usize;
+    let length_with_flags = u32::from_le_bytes(var_data[..4].try_into().unwrap());
+    let memo_type = length_with_flags & LVAL_TYPE_MASK;
+    let data_len = (length_with_flags & !LVAL_TYPE_MASK) as usize;
 
-    if memo_type == MEMO_INLINE {
+    if memo_type == LVAL_INLINE {
         // Inline: data starts at offset 12
-        let data_start = MEMO_INLINE_HEADER.min(var_data.len());
+        let data_start = LVAL_INLINE_HEADER.min(var_data.len());
         let data_end = (data_start + data_len).min(var_data.len());
-        if data_start >= var_data.len() {
-            return Value::Null;
+        if data_start > var_data.len() {
+            return None;
         }
-        match encoding::decode_text(&var_data[data_start..data_end], is_jet3) {
+        Some(var_data[data_start..data_end].to_vec())
+    } else if memo_type == LVAL_SINGLE_PAGE {
+        // Single-page overflow: read from the referenced LVAL page row
+        let reader = reader?;
+        if var_data.len() < 8 {
+            return None;
+        }
+        let pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
+        reader.read_pg_row(pg_row).ok()
+    } else if memo_type == LVAL_MULTI_PAGE {
+        // Multi-page overflow: chain of LVAL page rows
+        let reader = reader?;
+        if var_data.len() < 8 {
+            return None;
+        }
+        let mut pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
+        let mut buf = Vec::with_capacity(data_len);
+
+        while pg_row != 0 {
+            let row_data = reader.read_pg_row(pg_row).ok()?;
+            if row_data.len() < 4 {
+                return None;
+            }
+            let next_pg_row = u32::from_le_bytes(row_data[..4].try_into().unwrap());
+            buf.extend_from_slice(&row_data[4..]);
+            pg_row = next_pg_row;
+
+            // Safety: stop if we've already collected enough data
+            if buf.len() >= data_len {
+                break;
+            }
+        }
+
+        if buf.len() > data_len {
+            buf.truncate(data_len);
+        }
+
+        Some(buf)
+    } else {
+        // Unknown LVAL type
+        None
+    }
+}
+
+/// Read a Memo field value.
+fn read_memo_value(
+    var_data: &[u8],
+    is_jet3: bool,
+    reader: Option<&mut PageReader>,
+) -> Value {
+    match read_lval_data(var_data, reader) {
+        Some(data) => match encoding::decode_text(&data, is_jet3) {
             Ok(s) => Value::Text(s),
             Err(_) => Value::Null,
-        }
-    } else if memo_type == MEMO_SINGLE_PAGE {
-        // Single-page overflow — not yet supported
-        Value::Null
-    } else {
-        // Multi-page overflow — not yet supported
-        Value::Null
+        },
+        None => Value::Null,
+    }
+}
+
+/// Read an OLE field value.
+fn read_ole_value(var_data: &[u8], reader: Option<&mut PageReader>) -> Value {
+    match read_lval_data(var_data, reader) {
+        Some(data) => Value::Binary(data),
+        None => Value::Null,
     }
 }
 
@@ -823,13 +896,13 @@ mod tests {
         // Inline memo: length_with_flags has bit 31 set.
         // Text "Hi" in UTF-16LE = [0x48, 0x00, 0x69, 0x00] — 4 bytes.
         let data_len: u32 = 4;
-        let flags: u32 = MEMO_INLINE | data_len;
+        let flags: u32 = LVAL_INLINE | data_len;
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes()); // length_with_flags
         var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
         var_data.extend_from_slice(&[0x48, 0x00, 0x69, 0x00]); // "Hi" UTF-16LE
 
-        let val = read_memo_value(&var_data, false);
+        let val = read_memo_value(&var_data, false, None);
         assert_eq!(val, Value::Text("Hi".to_string()));
     }
 
@@ -837,91 +910,76 @@ mod tests {
     fn memo_inline_jet3_latin1() {
         // Jet3 inline memo: "Hi" in Latin-1 = [0x48, 0x69] — 2 bytes.
         let data_len: u32 = 2;
-        let flags: u32 = MEMO_INLINE | data_len;
+        let flags: u32 = LVAL_INLINE | data_len;
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes());
         var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
         var_data.extend_from_slice(&[0x48, 0x69]); // "Hi" Latin-1
 
-        let val = read_memo_value(&var_data, true);
+        let val = read_memo_value(&var_data, true, None);
         assert_eq!(val, Value::Text("Hi".to_string()));
     }
 
     #[test]
-    fn memo_overflow_returns_null() {
-        // Single-page overflow (bit 30 set)
-        let flags: u32 = MEMO_SINGLE_PAGE | 100;
+    fn memo_overflow_without_reader_returns_null() {
+        // Single-page overflow (bit 30 set), no reader provided
+        let flags: u32 = LVAL_SINGLE_PAGE | 100;
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes());
         var_data.extend_from_slice(&[0u8; 8]); // page ref + padding
 
-        let val = read_memo_value(&var_data, false);
+        let val = read_memo_value(&var_data, false, None);
         assert_eq!(val, Value::Null);
     }
 
     #[test]
-    fn memo_multi_page_returns_null() {
-        // Multi-page overflow (no type bits set)
+    fn memo_multi_page_without_reader_returns_null() {
+        // Multi-page overflow (no type bits set), no reader provided
         let flags: u32 = 500; // no high bits
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes());
         var_data.extend_from_slice(&[0u8; 8]);
 
-        let val = read_memo_value(&var_data, false);
+        let val = read_memo_value(&var_data, false, None);
         assert_eq!(val, Value::Null);
     }
 
     #[test]
     fn memo_too_short_returns_null() {
         // Less than 4 bytes
-        let val = read_memo_value(&[0x01, 0x02], false);
+        let val = read_memo_value(&[0x01, 0x02], false, None);
         assert_eq!(val, Value::Null);
     }
 
-    // -- read_column_value (Boolean) -------------------------------------------
+    #[test]
+    fn ole_inline_returns_binary() {
+        // Inline OLE: length_with_flags has bit 31 set.
+        let data: [u8; 3] = [0xDE, 0xAD, 0xBE];
+        let data_len: u32 = 3;
+        let flags: u32 = LVAL_INLINE | data_len;
+        let mut var_data = Vec::new();
+        var_data.extend_from_slice(&flags.to_le_bytes());
+        var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
+        var_data.extend_from_slice(&data);
+
+        let val = read_ole_value(&var_data, None);
+        assert_eq!(val, Value::Binary(data.to_vec()));
+    }
+
+    // -- Boolean from null mask ------------------------------------------------
 
     #[test]
     fn boolean_from_null_mask() {
-        // null_mask bit 0 = 1 → Bool(true), bit 1 = 0 → Bool(false)
-        let row_data = [0x02, 0x00]; // col_count = 2
-        let cracked = CrackedRow {
-            row_data: &row_data,
-            col_count: 2,
-            null_mask: &[0x01], // bit 0 set, bit 1 clear
-            var_col_count: 0,
-            var_offsets: Vec::new(),
-        };
-
-        let col0 = ColumnDef {
-            name: "b0".into(),
-            col_type: ColumnType::Boolean,
-            col_num: 0,
-            var_col_num: 0,
-            fixed_offset: 0,
-            col_size: 1,
-            flags: 0,
-            is_fixed: true,
-            scale: 0,
-            precision: 0,
-        };
-        let col1 = ColumnDef {
-            name: "b1".into(),
-            col_type: ColumnType::Boolean,
-            col_num: 1,
-            ..col0.clone()
-        };
-
-        assert_eq!(read_column_value(&cracked, &col0, false), Value::Bool(true));
-        assert_eq!(
-            read_column_value(&cracked, &col1, false),
-            Value::Bool(false)
-        );
+        // null_mask bit 0 = 1 → NOT NULL (true), bit 1 = 0 → NULL (false)
+        let null_mask = [0x01u8]; // bit 0 set, bit 1 clear
+        assert_eq!(Value::Bool(!is_null(&null_mask, 0)), Value::Bool(true));
+        assert_eq!(Value::Bool(!is_null(&null_mask, 1)), Value::Bool(false));
     }
 
-    // -- read_column_value (fixed types) ---------------------------------------
+    // -- read_fixed_value (fixed types) ----------------------------------------
 
     #[test]
-    fn read_fixed_int_value() {
+    fn read_fixed_int() {
         // col_count=1 (2 bytes) + fixed data at offset 0
         let mut row_data = vec![0x01, 0x00]; // col_count
         row_data.extend_from_slice(&(-42i16).to_le_bytes());
@@ -943,11 +1001,11 @@ mod tests {
             scale: 0,
             precision: 0,
         };
-        assert_eq!(read_column_value(&cracked, &col, false), Value::Int(-42));
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Int(-42));
     }
 
     #[test]
-    fn read_fixed_long_value() {
+    fn read_fixed_long() {
         let mut row_data = vec![0x01, 0x00];
         row_data.extend_from_slice(&123456i32.to_le_bytes());
         row_data.extend_from_slice(&6u16.to_le_bytes());
@@ -967,14 +1025,11 @@ mod tests {
             scale: 0,
             precision: 0,
         };
-        assert_eq!(
-            read_column_value(&cracked, &col, false),
-            Value::Long(123456)
-        );
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Long(123456));
     }
 
     #[test]
-    fn read_guid_value() {
+    fn read_fixed_guid() {
         let mut row_data = vec![0x01, 0x00]; // col_count
         // GUID bytes
         let guid_bytes: [u8; 16] = [
@@ -1000,7 +1055,7 @@ mod tests {
             precision: 0,
         };
         assert_eq!(
-            read_column_value(&cracked, &col, false),
+            read_fixed_value(&cracked, &col, false),
             Value::Guid("{04030201-0605-0807-090A-0B0C0D0E0F10}".to_string())
         );
     }
@@ -1123,5 +1178,323 @@ mod tests {
         let result = read_table_rows(&mut reader, &table).unwrap();
         assert_eq!(result.skipped_rows, 0);
         assert_msysobjects_rows(&result.rows, &table);
+    }
+
+    // -- LVAL overflow (Memo / OLE) -------------------------------------------
+
+    /// Expected long author text in test2 MSP_PROJECTS.
+    const EXPECTED_AUTHOR: &str = "Jon Iles this is a a vawesrasoih aksdkl fas dlkjflkasjd flkjaslkdjflkajlksj dfl lkasjdf lkjaskldfj lkas dlk lkjsjdfkl; aslkdf lkasjkldjf lka skldf lka sdkjfl;kasjd falksjdfljaslkdjf laskjdfk jalskjd flkj aslkdjflkjkjasljdflkjas jf;lkasjd fjkas dasdf asd fasdf asdf asdmhf lksaiyudfoi jasodfj902384jsdf9 aw90se fisajldkfj lkasj dlkfslkd jflksjadf as";
+
+    fn read_msp_projects_row(path: &std::path::Path) -> (Vec<Value>, TableDef) {
+        let mut reader = PageReader::open(path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "MSP_PROJECTS")
+            .expect("MSP_PROJECTS entry in catalog");
+        let table = crate::table::read_table_def(
+            &mut reader,
+            &entry.name,
+            entry.table_page,
+        )
+        .unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert!(
+            !result.rows.is_empty(),
+            "MSP_PROJECTS should have at least one row"
+        );
+        (result.rows.into_iter().next().unwrap(), table)
+    }
+
+    fn col_index(table: &TableDef, name: &str) -> usize {
+        table
+            .columns
+            .iter()
+            .position(|c| c.name == name)
+            .unwrap_or_else(|| panic!("column {name} not found"))
+    }
+
+    #[test]
+    fn jet4_memo_lval_overflow() {
+        let path = skip_if_missing!("V2003/test2V2003.mdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        // PROJ_PROP_AUTHOR: long Memo text (likely single-page LVAL overflow)
+        let author_idx = col_index(&table, "PROJ_PROP_AUTHOR");
+        match &row[author_idx] {
+            Value::Text(s) => assert_eq!(s, EXPECTED_AUTHOR),
+            other => panic!("Expected Text for PROJ_PROP_AUTHOR, got: {other:?}"),
+        }
+
+        // PROJ_PROP_COMPANY: short Memo text (inline)
+        let company_idx = col_index(&table, "PROJ_PROP_COMPANY");
+        assert_eq!(row[company_idx], Value::Text("T".to_string()));
+
+        // PROJ_PROP_TITLE: short Memo text (inline)
+        let title_idx = col_index(&table, "PROJ_PROP_TITLE");
+        assert_eq!(row[title_idx], Value::Text("Project1".to_string()));
+    }
+
+    #[test]
+    fn jet4_ole_lval_overflow() {
+        let path = skip_if_missing!("V2003/test2V2003.mdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        // RESERVED_BINARY_DATA: OLE binary (likely multi-page LVAL overflow)
+        let bin_idx = col_index(&table, "RESERVED_BINARY_DATA");
+        let expected = std::fs::read(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../testdata/test2BinData.dat"),
+        )
+        .unwrap();
+        match &row[bin_idx] {
+            Value::Binary(b) => assert_eq!(b, &expected),
+            other => panic!("Expected Binary for RESERVED_BINARY_DATA, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn jet3_memo_lval_overflow() {
+        let path = skip_if_missing!("V1997/test2V1997.mdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        let author_idx = col_index(&table, "PROJ_PROP_AUTHOR");
+        match &row[author_idx] {
+            Value::Text(s) => assert_eq!(s, EXPECTED_AUTHOR),
+            other => panic!("Expected Text for PROJ_PROP_AUTHOR, got: {other:?}"),
+        }
+
+        let title_idx = col_index(&table, "PROJ_PROP_TITLE");
+        assert_eq!(row[title_idx], Value::Text("Project1".to_string()));
+    }
+
+    #[test]
+    fn jet3_ole_lval_overflow() {
+        let path = skip_if_missing!("V1997/test2V1997.mdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        let bin_idx = col_index(&table, "RESERVED_BINARY_DATA");
+        let expected = std::fs::read(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../testdata/test2BinData.dat"),
+        )
+        .unwrap();
+        match &row[bin_idx] {
+            Value::Binary(b) => assert_eq!(b, &expected),
+            other => panic!("Expected Binary for RESERVED_BINARY_DATA, got: {other:?}"),
+        }
+    }
+
+    // -- LVAL inline empty data -----------------------------------------------
+
+    #[test]
+    fn lval_inline_empty_data() {
+        // Header only, data_len = 0 → should return Some(vec![])
+        let flags: u32 = LVAL_INLINE | 0; // data_len = 0
+        let mut var_data = Vec::new();
+        var_data.extend_from_slice(&flags.to_le_bytes()); // length_with_flags
+        var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
+        // No payload bytes — total 12 bytes (header only)
+
+        let result = read_lval_data(&var_data, None);
+        assert_eq!(result, Some(vec![]));
+    }
+
+    #[test]
+    fn memo_inline_empty_returns_empty_text() {
+        // Memo with inline empty data → empty string
+        let flags: u32 = LVAL_INLINE | 0;
+        let mut var_data = Vec::new();
+        var_data.extend_from_slice(&flags.to_le_bytes());
+        var_data.extend_from_slice(&[0u8; 8]);
+
+        let val = read_memo_value(&var_data, false, None);
+        assert_eq!(val, Value::Text("".to_string()));
+    }
+
+    // -- LVAL unknown type ----------------------------------------------------
+
+    #[test]
+    fn lval_unknown_type_returns_none() {
+        // Type bits = 0xC0000000 (both bit 31 and bit 30 set) — undefined type
+        let flags: u32 = 0xC0000000 | 42;
+        let mut var_data = Vec::new();
+        var_data.extend_from_slice(&flags.to_le_bytes());
+        var_data.extend_from_slice(&[0u8; 8]);
+
+        let result = read_lval_data(&var_data, None);
+        assert_eq!(result, None);
+    }
+
+    // -- read_column_value dispatch -------------------------------------------
+
+    #[test]
+    fn dispatch_boolean_from_null_mask() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let _table =
+            crate::table::read_table_def(&mut reader, "MSysObjects", crate::format::CATALOG_PAGE)
+                .unwrap();
+
+        // Synthesize a cracked row with a Boolean ColumnDef.
+        let mut row_data = vec![0x02, 0x00]; // col_count = 2
+        row_data.extend_from_slice(&[0x00, 0x00]); // fixed data placeholder
+        row_data.extend_from_slice(&4u16.to_le_bytes()); // EOD
+        row_data.extend_from_slice(&0u16.to_le_bytes()); // var_col_count = 0
+        row_data.push(0b00000010); // null_mask: col 1 NOT NULL, col 0 NULL
+
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let bool_col = ColumnDef {
+            name: "Flag".into(),
+            col_type: ColumnType::Boolean,
+            col_num: 1, // bit 1 is set → true
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size: 0,
+            flags: 0x01,
+            is_fixed: true,
+            scale: 0,
+            precision: 0,
+        };
+        assert_eq!(
+            read_column_value(&cracked, &bool_col, false, &mut reader),
+            Value::Bool(true)
+        );
+
+        // col_num 0 → bit 0 is clear → false
+        let bool_col_false = ColumnDef {
+            col_num: 0,
+            ..bool_col.clone()
+        };
+        assert_eq!(
+            read_column_value(&cracked, &bool_col_false, false, &mut reader),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn dispatch_null_returns_null() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+
+        let mut row_data = vec![0x02, 0x00]; // col_count = 2
+        row_data.extend_from_slice(&0i16.to_le_bytes()); // fixed data
+        row_data.extend_from_slice(&4u16.to_le_bytes()); // EOD
+        row_data.extend_from_slice(&0u16.to_le_bytes()); // var_col_count = 0
+        row_data.push(0x00); // null_mask: all NULL
+
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = ColumnDef {
+            name: "x".into(),
+            col_type: ColumnType::Int,
+            col_num: 0,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size: 2,
+            flags: 0x01,
+            is_fixed: true,
+            scale: 0,
+            precision: 0,
+        };
+        assert_eq!(
+            read_column_value(&cracked, &col, false, &mut reader),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn dispatch_fixed_int() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+
+        let mut row_data = vec![0x01, 0x00]; // col_count = 1
+        row_data.extend_from_slice(&(-42i16).to_le_bytes());
+        row_data.extend_from_slice(&4u16.to_le_bytes()); // EOD
+        row_data.extend_from_slice(&0u16.to_le_bytes()); // var_col_count = 0
+        row_data.push(0xFF); // null_mask: NOT NULL
+
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = ColumnDef {
+            name: "x".into(),
+            col_type: ColumnType::Int,
+            col_num: 0,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size: 2,
+            flags: 0x01,
+            is_fixed: true,
+            scale: 0,
+            precision: 0,
+        };
+        assert_eq!(
+            read_column_value(&cracked, &col, false, &mut reader),
+            Value::Int(-42)
+        );
+    }
+
+    // -- ACE12/ACE14 LVAL overflow --------------------------------------------
+
+    #[test]
+    fn ace12_memo_lval_overflow() {
+        let path = skip_if_missing!("V2007/test2V2007.accdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        let author_idx = col_index(&table, "PROJ_PROP_AUTHOR");
+        match &row[author_idx] {
+            Value::Text(s) => assert_eq!(s, EXPECTED_AUTHOR),
+            other => panic!("Expected Text for PROJ_PROP_AUTHOR, got: {other:?}"),
+        }
+
+        let title_idx = col_index(&table, "PROJ_PROP_TITLE");
+        assert_eq!(row[title_idx], Value::Text("Project1".to_string()));
+    }
+
+    #[test]
+    fn ace12_ole_lval_overflow() {
+        let path = skip_if_missing!("V2007/test2V2007.accdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        let bin_idx = col_index(&table, "RESERVED_BINARY_DATA");
+        let expected = std::fs::read(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../testdata/test2BinData.dat"),
+        )
+        .unwrap();
+        match &row[bin_idx] {
+            Value::Binary(b) => assert_eq!(b, &expected),
+            other => panic!("Expected Binary for RESERVED_BINARY_DATA, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ace14_memo_lval_overflow() {
+        let path = skip_if_missing!("V2010/test2V2010.accdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        let author_idx = col_index(&table, "PROJ_PROP_AUTHOR");
+        match &row[author_idx] {
+            Value::Text(s) => assert_eq!(s, EXPECTED_AUTHOR),
+            other => panic!("Expected Text for PROJ_PROP_AUTHOR, got: {other:?}"),
+        }
+
+        let title_idx = col_index(&table, "PROJ_PROP_TITLE");
+        assert_eq!(row[title_idx], Value::Text("Project1".to_string()));
+    }
+
+    #[test]
+    fn ace14_ole_lval_overflow() {
+        let path = skip_if_missing!("V2010/test2V2010.accdb");
+        let (row, table) = read_msp_projects_row(&path);
+
+        let bin_idx = col_index(&table, "RESERVED_BINARY_DATA");
+        let expected = std::fs::read(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../testdata/test2BinData.dat"),
+        )
+        .unwrap();
+        match &row[bin_idx] {
+            Value::Binary(b) => assert_eq!(b, &expected),
+            other => panic!("Expected Binary for RESERVED_BINARY_DATA, got: {other:?}"),
+        }
     }
 }
