@@ -522,8 +522,9 @@ const MEMO_INLINE: u32 = 0x80000000;
 const MEMO_SINGLE_PAGE: u32 = 0x40000000;
 /// Mask for the type flag bits.
 const MEMO_TYPE_MASK: u32 = 0xC0000000;
-/// Byte offset where inline long value data begins (after length_with_flags + padding).
-const MEMO_INLINE_HEADER: usize = 8;
+/// Byte offset where inline long value data begins.
+/// Inline layout: `[length_with_flags(4B)] [lval_dp(4B)] [unknown(4B)] [data...]`
+const MEMO_INLINE_HEADER: usize = 12;
 
 /// Read a Memo field value.
 ///
@@ -532,7 +533,7 @@ const MEMO_INLINE_HEADER: usize = 8;
 /// - bit 30 (0x40000000): LONG_VALUE_TYPE_OTHER_PAGE — single page reference
 /// - both 0: LONG_VALUE_TYPE_OTHER_PAGES — multi-page chain
 ///
-/// Inline layout: `[length_with_flags(4B)] [unknown/padding(4B)] [data...]`
+/// Inline layout: `[length_with_flags(4B)] [lval_dp(4B)] [unknown(4B)] [data...]`
 fn read_memo_value(var_data: &[u8], is_jet3: bool) -> Value {
     if var_data.len() < 4 {
         return Value::Null;
@@ -543,7 +544,7 @@ fn read_memo_value(var_data: &[u8], is_jet3: bool) -> Value {
     let data_len = (length_with_flags & !MEMO_TYPE_MASK) as usize;
 
     if memo_type == MEMO_INLINE {
-        // Inline: data starts at offset 8
+        // Inline: data starts at offset 12
         let data_start = MEMO_INLINE_HEADER.min(var_data.len());
         let data_end = (data_start + data_len).min(var_data.len());
         if data_start >= var_data.len() {
@@ -825,7 +826,7 @@ mod tests {
         let flags: u32 = MEMO_INLINE | data_len;
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes()); // length_with_flags
-        var_data.extend_from_slice(&[0u8; 4]); // padding
+        var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
         var_data.extend_from_slice(&[0x48, 0x00, 0x69, 0x00]); // "Hi" UTF-16LE
 
         let val = read_memo_value(&var_data, false);
@@ -839,7 +840,7 @@ mod tests {
         let flags: u32 = MEMO_INLINE | data_len;
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes());
-        var_data.extend_from_slice(&[0u8; 4]); // padding
+        var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
         var_data.extend_from_slice(&[0x48, 0x69]); // "Hi" Latin-1
 
         let val = read_memo_value(&var_data, true);
