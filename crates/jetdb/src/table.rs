@@ -374,11 +374,11 @@ fn read_names(
         } else {
             let name_len = cursor.read_u16_le()? as usize;
             let bytes = cursor.read_bytes(name_len)?;
-            names.push(
-                encoding::decode_utf16le(bytes).map_err(|_| FileError::InvalidTableDef {
+            names.push(encoding::decode_utf16le(bytes).map_err(|_| {
+                FileError::InvalidTableDef {
                     reason: "invalid UTF-16LE name",
-                })?,
-            );
+                }
+            })?);
         }
     }
     Ok(names)
@@ -575,8 +575,8 @@ fn build_index_defs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::{column_flags, CATALOG_PAGE};
     use crate::format::ColumnType;
+    use crate::format::{column_flags, CATALOG_PAGE};
 
     fn test_data_path(relative: &str) -> Option<std::path::PathBuf> {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
@@ -882,10 +882,7 @@ mod tests {
         let tdef = assert_user_table_indexes(&path, "Table1");
 
         for idx in &tdef.indexes {
-            assert!(
-                !idx.name.is_empty(),
-                "index name should not be empty"
-            );
+            assert!(!idx.name.is_empty(), "index name should not be empty");
         }
     }
 
@@ -949,7 +946,8 @@ mod tests {
         entry[JET3.coldef_length_pos + 1] = 0;
 
         let mut cursor = TdefCursor::new(&entry, 0);
-        let cols = parse_column_entries(&mut cursor, JET3.tdef_column_entry_span, 1, true, &JET3).unwrap();
+        let cols =
+            parse_column_entries(&mut cursor, JET3.tdef_column_entry_span, 1, true, &JET3).unwrap();
         assert_eq!(cols.len(), 1);
         assert_eq!(cols[0].col_type, ColumnType::Long);
         assert_eq!(cols[0].col_num, 5);
@@ -971,7 +969,8 @@ mod tests {
         entry[JET4.coldef_length_pos + 1] = 0;
 
         let mut cursor = TdefCursor::new(&entry, 0);
-        let cols = parse_column_entries(&mut cursor, JET4.tdef_column_entry_span, 1, false, &JET4).unwrap();
+        let cols = parse_column_entries(&mut cursor, JET4.tdef_column_entry_span, 1, false, &JET4)
+            .unwrap();
         assert_eq!(cols.len(), 1);
         assert_eq!(cols[0].col_type, ColumnType::Text);
         assert_eq!(cols[0].col_num, 3);

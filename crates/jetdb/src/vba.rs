@@ -52,11 +52,15 @@ pub fn read_vba_project(reader: &mut PageReader) -> Result<VbaProject, FileError
     // Fall back to MSysAccessObjects (Jet3/Access 97 format)
     let raw_cfb = read_access_objects_cfb(reader)?;
     if raw_cfb.is_empty() {
-        return Ok(VbaProject { modules: Vec::new() });
+        return Ok(VbaProject {
+            modules: Vec::new(),
+        });
     }
     let cfb_bytes = extract_vba_project_cfb(raw_cfb)?;
     if cfb_bytes.is_empty() {
-        return Ok(VbaProject { modules: Vec::new() });
+        return Ok(VbaProject {
+            modules: Vec::new(),
+        });
     }
     extract_modules_from_cfb(cfb_bytes)
 }
@@ -69,11 +73,12 @@ fn extract_modules_from_cfb(cfb_bytes: Vec<u8>) -> Result<VbaProject, FileError>
 
     let mut modules = Vec::new();
     for module in &project.modules {
-        let source = project
-            .module_source(&module.name)
-            .map_err(|e| FileError::InvalidVbaProject {
-                reason: e.to_string(),
-            })?;
+        let source =
+            project
+                .module_source(&module.name)
+                .map_err(|e| FileError::InvalidVbaProject {
+                    reason: e.to_string(),
+                })?;
 
         let module_type = match module.module_type {
             ovba::ModuleType::Procedural => VbaModuleType::Standard,
@@ -258,10 +263,9 @@ fn read_access_objects_cfb(reader: &mut PageReader) -> Result<Vec<u8>, FileError
 /// (e.g., `/VBA/dir`, `/PROJECT`), so we strip the `/VBA/VBAProject` prefix.
 fn extract_vba_project_cfb(cfb_bytes: Vec<u8>) -> Result<Vec<u8>, FileError> {
     let cursor = Cursor::new(cfb_bytes);
-    let mut source =
-        cfb::CompoundFile::open(cursor).map_err(|e| FileError::InvalidVbaProject {
-            reason: format!("failed to open CFB: {e}"),
-        })?;
+    let mut source = cfb::CompoundFile::open(cursor).map_err(|e| FileError::InvalidVbaProject {
+        reason: format!("failed to open CFB: {e}"),
+    })?;
 
     const PREFIX: &str = "/VBA/VBAProject";
 
@@ -293,11 +297,10 @@ fn extract_vba_project_cfb(cfb_bytes: Vec<u8>) -> Result<Vec<u8>, FileError> {
     // Create storages first (ensures parent dirs exist)
     for (path, is_storage) in &entries {
         if *is_storage {
-            dest.create_storage_all(path).map_err(|e| {
-                FileError::InvalidVbaProject {
+            dest.create_storage_all(path)
+                .map_err(|e| FileError::InvalidVbaProject {
                     reason: format!("failed to create storage '{path}': {e}"),
-                }
-            })?;
+                })?;
         }
     }
 
@@ -317,16 +320,16 @@ fn extract_vba_project_cfb(cfb_bytes: Vec<u8>) -> Result<Vec<u8>, FileError> {
                     reason: format!("failed to read stream '{source_path}': {e}"),
                 })?;
 
-            let mut stream = dest.create_stream(path).map_err(|e| {
-                FileError::InvalidVbaProject {
-                    reason: format!("failed to create stream '{path}': {e}"),
-                }
-            })?;
-            stream.write_all(&data).map_err(|e| {
-                FileError::InvalidVbaProject {
+            let mut stream =
+                dest.create_stream(path)
+                    .map_err(|e| FileError::InvalidVbaProject {
+                        reason: format!("failed to create stream '{path}': {e}"),
+                    })?;
+            stream
+                .write_all(&data)
+                .map_err(|e| FileError::InvalidVbaProject {
                     reason: format!("failed to write stream '{path}': {e}"),
-                }
-            })?;
+                })?;
         }
     }
 
@@ -390,10 +393,16 @@ fn collect_children<'a>(
 fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileError> {
     let (vba_project_id, vba_entries) = match find_vba_project_entries(entries) {
         Some(v) => v,
-        None => return Ok(VbaProject { modules: Vec::new() }),
+        None => {
+            return Ok(VbaProject {
+                modules: Vec::new(),
+            })
+        }
     };
     if vba_entries.is_empty() {
-        return Ok(VbaProject { modules: Vec::new() });
+        return Ok(VbaProject {
+            modules: Vec::new(),
+        });
     }
 
     // Build an ID-to-entry map for path construction
@@ -418,11 +427,11 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
 
     for entry in &streams {
         let path = build_entry_path(entry, vba_project_id, &id_map);
-        let mut stream = cf.create_stream(&path).map_err(|e| {
-            FileError::InvalidVbaProject {
+        let mut stream = cf
+            .create_stream(&path)
+            .map_err(|e| FileError::InvalidVbaProject {
                 reason: format!("failed to create stream '{path}': {e}"),
-            }
-        })?;
+            })?;
         stream
             .write_all(&entry.data)
             .map_err(|e| FileError::InvalidVbaProject {
@@ -520,10 +529,7 @@ mod tests {
     }
 
     /// Helper to verify VBA project modules match expected names and types.
-    fn assert_vba_modules(
-        project: &VbaProject,
-        expected: &[(&str, VbaModuleType)],
-    ) {
+    fn assert_vba_modules(project: &VbaProject, expected: &[(&str, VbaModuleType)]) {
         assert_eq!(project.modules.len(), expected.len());
         let mut names: Vec<&str> = project.modules.iter().map(|m| m.name.as_str()).collect();
         names.sort();
@@ -533,7 +539,10 @@ mod tests {
 
         for (name, expected_type) in expected {
             let module = project.modules.iter().find(|m| m.name == *name).unwrap();
-            assert_eq!(module.module_type, *expected_type, "type mismatch for {name}");
+            assert_eq!(
+                module.module_type, *expected_type,
+                "type mismatch for {name}"
+            );
             assert!(!module.source.is_empty(), "empty source for {name}");
         }
     }

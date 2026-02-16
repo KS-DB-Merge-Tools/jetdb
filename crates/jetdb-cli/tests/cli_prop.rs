@@ -99,10 +99,7 @@ fn prop_nonexistent_file() {
         .args(["prop", "/nonexistent/path/to/file.mdb", "Table1"])
         .output()
         .expect("failed to run jetdb");
-    assert!(
-        !output.status.success(),
-        "should fail for nonexistent file"
-    );
+    assert!(!output.status.success(), "should fail for nonexistent file");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("jetdb:"),

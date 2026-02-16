@@ -228,9 +228,7 @@ fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
         let entry = catalog
             .iter()
             .find(|e| e.object_type == ObjectType::Table && e.name == *name)
-            .ok_or(jetdb::FileError::TableNotFound {
-                name: name.clone(),
-            })?;
+            .ok_or(jetdb::FileError::TableNotFound { name: name.clone() })?;
         vec![entry]
     } else {
         catalog

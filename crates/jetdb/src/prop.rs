@@ -152,8 +152,7 @@ pub(crate) fn parse_lvprop(data: &[u8], is_jet3: bool) -> Result<Vec<PropertyMap
     let mut maps: Vec<PropertyMap> = Vec::new();
 
     while offset + 6 <= data.len() {
-        let chunk_len =
-            u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
+        let chunk_len = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
         let chunk_type = u16::from_le_bytes(data[offset + 4..offset + 6].try_into().unwrap());
 
         if chunk_len < 6 {
@@ -193,8 +192,7 @@ fn parse_name_list(chunk_data: &[u8], is_jet3: bool) -> Result<Vec<String>, File
     let mut pos = 0;
 
     while pos + 2 <= chunk_data.len() {
-        let name_len =
-            u16::from_le_bytes(chunk_data[pos..pos + 2].try_into().unwrap()) as usize;
+        let name_len = u16::from_le_bytes(chunk_data[pos..pos + 2].try_into().unwrap()) as usize;
         pos += 2;
         if pos + name_len > chunk_data.len() {
             break;
@@ -235,13 +233,11 @@ fn parse_value_chunk(
         });
     }
 
-    let name_block_len =
-        u32::from_le_bytes(chunk_data[..4].try_into().unwrap()) as usize;
+    let name_block_len = u32::from_le_bytes(chunk_data[..4].try_into().unwrap()) as usize;
 
     // Extract block name
     let block_name = if name_block_len > 6 && chunk_data.len() >= 6 {
-        let block_name_len =
-            u16::from_le_bytes(chunk_data[4..6].try_into().unwrap()) as usize;
+        let block_name_len = u16::from_le_bytes(chunk_data[4..6].try_into().unwrap()) as usize;
         let name_end = (6 + block_name_len).min(chunk_data.len());
         let name_bytes = &chunk_data[6..name_end];
         if is_jet3 {
@@ -259,8 +255,7 @@ fn parse_value_chunk(
     let mut pos = entries_start;
 
     while pos + 8 <= chunk_data.len() {
-        let val_len =
-            u16::from_le_bytes(chunk_data[pos..pos + 2].try_into().unwrap()) as usize;
+        let val_len = u16::from_le_bytes(chunk_data[pos..pos + 2].try_into().unwrap()) as usize;
         if val_len < 8 {
             break;
         }
@@ -525,8 +520,8 @@ mod tests {
     #[test]
     fn decode_prop_value_binary_as_guid() {
         let guid_bytes: [u8; 16] = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
-            0x0D, 0x0E, 0x0F, 0x10,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10,
         ];
         let val = decode_prop_value(0x09, &guid_bytes, "GUID", false);
         assert_eq!(
@@ -597,9 +592,7 @@ mod tests {
 
         // Property entry: Text "AccessVersion" = "08.50" in UTF-16LE
         // "08.50" = 5 chars = 10 bytes
-        let text_bytes = [
-            0x30, 0x00, 0x38, 0x00, 0x2E, 0x00, 0x35, 0x00, 0x30, 0x00,
-        ];
+        let text_bytes = [0x30, 0x00, 0x38, 0x00, 0x2E, 0x00, 0x35, 0x00, 0x30, 0x00];
         let val_len: u16 = 8 + text_bytes.len() as u16;
         chunk.extend_from_slice(&val_len.to_le_bytes());
         chunk.push(0x00); // ddl_flag = false
@@ -613,10 +606,7 @@ mod tests {
         assert_eq!(map.name, "");
         assert_eq!(map.properties.len(), 1);
         assert_eq!(map.properties[0].name, "AccessVersion");
-        assert_eq!(
-            map.properties[0].value,
-            Value::Text("08.50".to_string())
-        );
+        assert_eq!(map.properties[0].value, Value::Text("08.50".to_string()));
         assert!(!map.properties[0].ddl);
     }
 
@@ -669,10 +659,7 @@ mod tests {
         assert_eq!(maps[0].name, "");
         assert_eq!(maps[0].properties.len(), 1);
         assert_eq!(maps[0].properties[0].name, "Title");
-        assert_eq!(
-            maps[0].properties[0].value,
-            Value::Text("Test".to_string())
-        );
+        assert_eq!(maps[0].properties[0].value, Value::Text("Test".to_string()));
     }
 
     #[test]
@@ -755,7 +742,10 @@ mod tests {
         assert_has_properties(&props);
 
         // Default マップ (テーブルプロパティ) が存在すること
-        let default_map = props.maps.iter().find(|m| m.map_type == PropMapType::Default);
+        let default_map = props
+            .maps
+            .iter()
+            .find(|m| m.map_type == PropMapType::Default);
         assert!(default_map.is_some(), "should have a Default property map");
 
         // GUID プロパティが存在すること
@@ -786,8 +776,7 @@ mod tests {
     fn nonexistent_object_returns_empty() {
         let path = skip_if_missing!("V2003/testV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();
-        let props =
-            read_object_properties(&mut reader, "NoSuchObject_XYZ_12345").unwrap();
+        let props = read_object_properties(&mut reader, "NoSuchObject_XYZ_12345").unwrap();
         assert!(props.maps.is_empty());
     }
 
@@ -821,9 +810,9 @@ mod tests {
 
     #[test]
     fn decode_prop_value_double() {
-        let raw = 3.14f64.to_le_bytes();
+        let raw = 3.125f64.to_le_bytes();
         let val = decode_prop_value(0x07, &raw, "test", false);
-        assert!(matches!(val, Value::Double(v) if (v - 3.14).abs() < f64::EPSILON));
+        assert!(matches!(val, Value::Double(v) if (v - 3.125).abs() < f64::EPSILON));
     }
 
     #[test]
@@ -855,8 +844,8 @@ mod tests {
     #[test]
     fn decode_prop_value_guid_16bytes() {
         let guid_bytes: [u8; 16] = [
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-            0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
+            0x0F, 0x10,
         ];
         let val = decode_prop_value(0x0F, &guid_bytes, "test", false);
         assert_eq!(

@@ -49,10 +49,7 @@ fn export_basic() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
     // Should have a header line
-    assert!(
-        !lines.is_empty(),
-        "should have at least a header line"
-    );
+    assert!(!lines.is_empty(), "should have at least a header line");
     // Header should start with known column names
     assert!(
         lines[0].starts_with("A,B,"),
@@ -60,10 +57,7 @@ fn export_basic() {
         lines[0]
     );
     // Should have data rows beyond the header
-    assert!(
-        lines.len() > 1,
-        "should have data rows beyond header"
-    );
+    assert!(lines.len() > 1, "should have data rows beyond header");
 }
 
 // ---------------------------------------------------------------------------
@@ -127,13 +121,7 @@ fn export_tab_delimiter() {
 fn export_date_format() {
     let path = skip_if_missing!("V2003/testV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "export",
-            path.to_str().unwrap(),
-            "Table1",
-            "-D",
-            "%d/%m/%Y",
-        ])
+        .args(["export", path.to_str().unwrap(), "Table1", "-D", "%d/%m/%Y"])
         .output()
         .expect("failed to run jetdb");
     assert!(
@@ -156,13 +144,7 @@ fn export_date_format() {
 fn export_null_string() {
     let path = skip_if_missing!("V2003/testV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "export",
-            path.to_str().unwrap(),
-            "Table1",
-            "-0",
-            "(null)",
-        ])
+        .args(["export", path.to_str().unwrap(), "Table1", "-0", "(null)"])
         .output()
         .expect("failed to run jetdb");
     assert!(
@@ -180,12 +162,7 @@ fn export_null_string() {
 fn export_boolean_words() {
     let path = skip_if_missing!("V2003/testV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "export",
-            path.to_str().unwrap(),
-            "Table1",
-            "-B",
-        ])
+        .args(["export", path.to_str().unwrap(), "Table1", "-B"])
         .output()
         .expect("failed to run jetdb");
     assert!(

@@ -273,7 +273,11 @@ mod tests {
     #[test]
     fn filter_excludes_hidden_flag() {
         let catalog = vec![
-            entry("MSysNavPaneGroups", ObjectType::Table, catalog_flags::HIDDEN),
+            entry(
+                "MSysNavPaneGroups",
+                ObjectType::Table,
+                catalog_flags::HIDDEN,
+            ),
             entry("Orders", ObjectType::Table, 0),
         ];
         let names = filter_user_tables(catalog);
@@ -322,7 +326,11 @@ mod tests {
         let catalog = vec![
             entry("MSysObjects", ObjectType::Table, catalog_flags::SYSTEM),
             entry("MSysACEs", ObjectType::Table, catalog_flags::SYSTEM),
-            entry("MSysNavPaneGroups", ObjectType::Table, catalog_flags::HIDDEN | 0x08),
+            entry(
+                "MSysNavPaneGroups",
+                ObjectType::Table,
+                catalog_flags::HIDDEN | 0x08,
+            ),
             entry("SavedQuery", ObjectType::Query, 0),
             entry("Employees", ObjectType::Table, 0),
             entry("Departments", ObjectType::Table, 0),

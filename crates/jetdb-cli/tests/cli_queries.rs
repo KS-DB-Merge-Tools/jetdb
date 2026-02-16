@@ -48,10 +48,7 @@ fn queries_list() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let trimmed = stdout.trim();
-    assert!(
-        !trimmed.is_empty(),
-        "should have query names in output"
-    );
+    assert!(!trimmed.is_empty(), "should have query names in output");
     // Should contain known query names
     assert!(
         trimmed.contains("SelectQuery"),

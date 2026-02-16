@@ -94,12 +94,11 @@ fn run_show(args: &QueryShowArgs) -> Result<(), jetdb::FileError> {
     let mut reader = PageReader::open(&args.file)?;
     let queries = read_queries(&mut reader)?;
 
-    let qdef = queries
-        .iter()
-        .find(|q| q.name == args.query_name)
-        .ok_or(jetdb::FileError::QueryNotFound {
+    let qdef = queries.iter().find(|q| q.name == args.query_name).ok_or(
+        jetdb::FileError::QueryNotFound {
             name: args.query_name.clone(),
-        })?;
+        },
+    )?;
     let sql = query_to_sql(qdef);
     println!("{sql}");
 

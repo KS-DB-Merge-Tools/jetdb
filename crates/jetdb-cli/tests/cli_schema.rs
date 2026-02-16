@@ -73,7 +73,10 @@ fn schema_single_table_columns() {
     assert!(stdout.contains("B"), "should contain column B");
     assert!(stdout.contains("Text(200)"), "should contain Text(200)");
     assert!(stdout.contains("Long"), "should contain Long type");
-    assert!(stdout.contains("Timestamp"), "should contain Timestamp type");
+    assert!(
+        stdout.contains("Timestamp"),
+        "should contain Timestamp type"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -276,12 +279,7 @@ fn schema_nonexistent_file() {
 fn schema_nonexistent_table() {
     let path = skip_if_missing!("V2003/testV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "-T",
-            "NoSuchTable",
-        ])
+        .args(["schema", path.to_str().unwrap(), "-T", "NoSuchTable"])
         .output()
         .expect("failed to run jetdb");
     assert!(
@@ -299,12 +297,7 @@ fn schema_nonexistent_table() {
 fn schema_nonexistent_table_msg() {
     let path = skip_if_missing!("V2003/testV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "-T",
-            "NoSuchTable",
-        ])
+        .args(["schema", path.to_str().unwrap(), "-T", "NoSuchTable"])
         .output()
         .expect("failed to run jetdb");
     assert!(!output.status.success());
@@ -376,7 +369,11 @@ fn ddl_sqlite_basic() {
         .args(["schema", path.to_str().unwrap(), "--ddl", "sqlite"])
         .output()
         .expect("failed to run jetdb");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("CREATE TABLE"),
@@ -563,12 +560,7 @@ fn ddl_no_relations() {
 fn ddl_with_relationships() {
     let path = skip_if_missing!("V2003/indexTestV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "--ddl",
-            "postgres",
-        ])
+        .args(["schema", path.to_str().unwrap(), "--ddl", "postgres"])
         .output()
         .expect("failed to run jetdb");
     assert!(output.status.success());
@@ -591,12 +583,7 @@ fn ddl_with_relationships() {
 fn ddl_sqlite_inline_fk() {
     let path = skip_if_missing!("V2003/indexTestV2003.mdb");
     let output = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "--ddl",
-            "sqlite",
-        ])
+        .args(["schema", path.to_str().unwrap(), "--ddl", "sqlite"])
         .output()
         .expect("failed to run jetdb");
     assert!(output.status.success());
@@ -631,7 +618,11 @@ fn ddl_ace12() {
         ])
         .output()
         .expect("failed to run jetdb");
-    assert!(output.status.success(), "stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("CREATE TABLE"),

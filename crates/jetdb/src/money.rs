@@ -79,10 +79,7 @@ mod tests {
 
     #[test]
     fn money_positive() {
-        assert_eq!(
-            money_to_string(&123_456_789i64.to_le_bytes()),
-            "12345.6789"
-        );
+        assert_eq!(money_to_string(&123_456_789i64.to_le_bytes()), "12345.6789");
     }
 
     #[test]
@@ -125,10 +122,10 @@ mod tests {
         // Value 42, scale 0
         let mut bytes = [0u8; 17];
         bytes[0] = 0x00; // positive
-        // 42 as u128 BE = ... 0x2A in last group
-        // Last 4-byte group (bytes 13-16) should contain 42 in swapped LE form
-        // BE u128 for 42: 0x00..002A → group3=[0x00,0x00,0x00,0x2A]
-        // After swap, disk bytes: group3=[0x2A,0x00,0x00,0x00]
+                         // 42 as u128 BE = ... 0x2A in last group
+                         // Last 4-byte group (bytes 13-16) should contain 42 in swapped LE form
+                         // BE u128 for 42: 0x00..002A → group3=[0x00,0x00,0x00,0x2A]
+                         // After swap, disk bytes: group3=[0x2A,0x00,0x00,0x00]
         bytes[13] = 0x2A;
         bytes[14] = 0x00;
         bytes[15] = 0x00;
@@ -141,8 +138,8 @@ mod tests {
         // Value 12345 with scale 2 → "123.45"
         let mut bytes = [0u8; 17];
         bytes[0] = 0x00; // positive
-        // 12345 = 0x3039 → BE group3 = [0x00, 0x00, 0x30, 0x39]
-        // Disk (LE per group): [0x39, 0x30, 0x00, 0x00]
+                         // 12345 = 0x3039 → BE group3 = [0x00, 0x00, 0x30, 0x39]
+                         // Disk (LE per group): [0x39, 0x30, 0x00, 0x00]
         bytes[13] = 0x39;
         bytes[14] = 0x30;
         bytes[15] = 0x00;

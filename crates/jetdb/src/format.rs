@@ -624,10 +624,7 @@ mod tests {
             JetVersion::Ace17,
         ];
         for v in ace_versions {
-            assert!(
-                std::ptr::eq(v.format(), &JET4),
-                "{v} should return &JET4"
-            );
+            assert!(std::ptr::eq(v.format(), &JET4), "{v} should return &JET4");
         }
         // Jet4 itself should also return &JET4
         assert!(std::ptr::eq(JetVersion::Jet4.format(), &JET4));
@@ -696,10 +693,7 @@ mod tests {
 
     #[test]
     fn page_type_unknown() {
-        assert_eq!(
-            PageType::try_from(6),
-            Err(FormatError::UnknownPageType(6))
-        );
+        assert_eq!(PageType::try_from(6), Err(FormatError::UnknownPageType(6)));
     }
 
     #[test]
@@ -802,10 +796,16 @@ mod tests {
 
     #[test]
     fn page_type_display() {
-        assert_eq!(PageType::DatabaseDefinition.to_string(), "Database Definition");
+        assert_eq!(
+            PageType::DatabaseDefinition.to_string(),
+            "Database Definition"
+        );
         assert_eq!(PageType::Data.to_string(), "Data");
         assert_eq!(PageType::TableDefinition.to_string(), "Table Definition");
-        assert_eq!(PageType::IntermediateIndex.to_string(), "Intermediate Index");
+        assert_eq!(
+            PageType::IntermediateIndex.to_string(),
+            "Intermediate Index"
+        );
         assert_eq!(PageType::LeafIndex.to_string(), "Leaf Index");
         assert_eq!(PageType::PageUsageBitmap.to_string(), "Page Usage Bitmap");
     }

@@ -243,11 +243,11 @@ mod tests {
         // testV2003.mdb should have relationships defined
         // Each relationship should have non-empty name, tables, and columns
         for rel in &rels {
-            assert!(!rel.name.is_empty(), "relationship name should not be empty");
             assert!(
-                !rel.from_table.is_empty(),
-                "from_table should not be empty"
+                !rel.name.is_empty(),
+                "relationship name should not be empty"
             );
+            assert!(!rel.from_table.is_empty(), "from_table should not be empty");
             assert!(!rel.to_table.is_empty(), "to_table should not be empty");
             assert!(
                 !rel.columns.is_empty(),

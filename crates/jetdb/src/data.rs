@@ -64,10 +64,7 @@ impl ReadResult {
 ///
 /// Returns a `ReadResult` containing the successfully parsed rows and a count
 /// of rows that were skipped due to errors (e.g. corrupt row data).
-pub fn read_table_rows(
-    reader: &mut PageReader,
-    table: &TableDef,
-) -> Result<ReadResult, FileError> {
+pub fn read_table_rows(reader: &mut PageReader, table: &TableDef) -> Result<ReadResult, FileError> {
     let format = reader.format();
     let is_jet3 = reader.header().version.is_jet3();
     let mut rows = Vec::new();
@@ -85,8 +82,7 @@ pub fn read_table_rows(
         if page_data.len() < row_count_pos + 2 {
             continue;
         }
-        let num_rows =
-            u16::from_le_bytes([page_data[row_count_pos], page_data[row_count_pos + 1]]);
+        let num_rows = u16::from_le_bytes([page_data[row_count_pos], page_data[row_count_pos + 1]]);
 
         for row_idx in 0..num_rows {
             // Read the raw row pointer to check flags before find_row
@@ -95,8 +91,7 @@ pub fn read_table_rows(
             if entry_pos + 2 > page_data.len() {
                 break;
             }
-            let row_ptr =
-                u16::from_le_bytes([page_data[entry_pos], page_data[entry_pos + 1]]);
+            let row_ptr = u16::from_le_bytes([page_data[entry_pos], page_data[entry_pos + 1]]);
 
             // Skip deleted rows
             if row_ptr & row::DELETE_FLAG != 0 {
@@ -104,7 +99,7 @@ pub fn read_table_rows(
             }
             // Skip overflow/lookup rows (multi-page rows not yet supported)
             if row_ptr & row::LOOKUP_FLAG != 0 {
-                log::warn!("skipping overflow row on page {page_num} row {row_idx}");
+                log::debug!("skipping overflow row on page {page_num} row {row_idx}");
                 skipped_rows += 1;
                 continue;
             }
@@ -112,7 +107,7 @@ pub fn read_table_rows(
             let (start, size) = match find_row(format, &page_data, page_num, row_idx) {
                 Ok(v) => v,
                 Err(e) => {
-                    log::warn!("skipping row on page {page_num} row {row_idx}: {e}");
+                    log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
                     skipped_rows += 1;
                     continue;
                 }
@@ -122,7 +117,7 @@ pub fn read_table_rows(
             let cracked = match crack_row(row_data, is_jet3) {
                 Ok(c) => c,
                 Err(e) => {
-                    log::warn!("skipping row on page {page_num} row {row_idx}: {e}");
+                    log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
                     skipped_rows += 1;
                     continue;
                 }
@@ -137,10 +132,7 @@ pub fn read_table_rows(
         }
     }
 
-    Ok(ReadResult {
-        rows,
-        skipped_rows,
-    })
+    Ok(ReadResult { rows, skipped_rows })
 }
 
 // ---------------------------------------------------------------------------
@@ -315,9 +307,7 @@ fn crack_row_jet3(row_data: &[u8]) -> Result<CrackedRow<'_>, FileError> {
     // Dummy jump check:
     // If last jump is a dummy value, ignore it
     let mut actual_num_jumps = num_jumps;
-    if actual_num_jumps > 0
-        && col_ptr.saturating_sub(offset_entries) / 256 < actual_num_jumps
-    {
+    if actual_num_jumps > 0 && col_ptr.saturating_sub(offset_entries) / 256 < actual_num_jumps {
         actual_num_jumps -= 1;
     }
 
@@ -335,9 +325,7 @@ fn crack_row_jet3(row_data: &[u8]) -> Result<CrackedRow<'_>, FileError> {
     let mut var_offsets = Vec::with_capacity(offset_entries);
     let mut jumps_used = 0usize;
     for i in 0..offset_entries {
-        while jumps_used < actual_num_jumps
-            && i == row_data[vcc_pos - 1 - jumps_used] as usize
-        {
+        while jumps_used < actual_num_jumps && i == row_data[vcc_pos - 1 - jumps_used] as usize {
             jumps_used += 1;
         }
         let raw_offset = row_data[col_ptr - i] as u16;
@@ -574,9 +562,7 @@ fn read_variable_value(
         ColumnType::Timestamp if var_data.len() >= 8 => {
             Value::Timestamp(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
         }
-        ColumnType::Guid if var_data.len() >= 16 => {
-            Value::Guid(format_guid(&var_data[..16]))
-        }
+        ColumnType::Guid if var_data.len() >= 16 => Value::Guid(format_guid(&var_data[..16])),
         ColumnType::ComplexType if var_data.len() >= 4 => {
             Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
         }
@@ -615,10 +601,7 @@ const LVAL_INLINE_HEADER: usize = 12;
 /// Multi-page (0x00): `pg_row` at `var_data[4..8]` is the first chunk.
 /// Each chunk's first 4 bytes are the next `pg_row` (0 = end); bytes after
 /// offset 4 are appended to the result buffer.
-fn read_lval_data(
-    var_data: &[u8],
-    reader: Option<&mut PageReader>,
-) -> Option<Vec<u8>> {
+fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Vec<u8>> {
     if var_data.len() < 4 {
         return None;
     }
@@ -682,11 +665,7 @@ fn read_lval_data(
 }
 
 /// Read a Memo field value.
-fn read_memo_value(
-    var_data: &[u8],
-    is_jet3: bool,
-    reader: Option<&mut PageReader>,
-) -> Value {
+fn read_memo_value(var_data: &[u8], is_jet3: bool, reader: Option<&mut PageReader>) -> Value {
     match read_lval_data(var_data, reader) {
         Some(data) => match encoding::decode_text(&data, is_jet3) {
             Ok(s) => Value::Text(s),
@@ -826,7 +805,7 @@ mod tests {
         let mut row = Vec::new();
         row.extend_from_slice(&[0x02, 0x00]); // col_count
         row.extend_from_slice(&[0x42, 0x43]); // fixed data
-        // EOD offset (points to end of fixed data = 4)
+                                              // EOD offset (points to end of fixed data = 4)
         row.extend_from_slice(&4u16.to_le_bytes());
         // var_col_count = 0
         row.extend_from_slice(&0u16.to_le_bytes());
@@ -864,7 +843,7 @@ mod tests {
         row.push(0x02); // col_count
         row.extend_from_slice(&[0xAA, 0xBB]); // fixed data
         row.extend_from_slice(&[0x48, 0x69]); // var data
-        // offset table: end=5, EOD=3
+                                              // offset table: end=5, EOD=3
         row.push(5);
         row.push(3);
         // var_col_count = 1
@@ -924,17 +903,17 @@ mod tests {
         let mut row = Vec::with_capacity(target_len);
         row.push(col_count);
         // Fill payload (fixed + variable data regions)
-        row.extend(std::iter::repeat(0xAA).take(payload_size));
+        row.extend(std::iter::repeat_n(0xAA, payload_size));
 
         // offset_table: 3 entries read via col_ptr - i.
         // col_ptr points to the last pushed byte (highest position).
         // Push in reverse order: entry[2] first, entry[0] last.
-        row.push(24);  // col_ptr-2 → entry[2]: var col 1 end = 280 - 256 = 24
+        row.push(24); // col_ptr-2 → entry[2]: var col 1 end = 280 - 256 = 24
         row.push(200); // col_ptr-1 → entry[1]: var col 0 end / var col 1 start = 200
-        row.push(1);   // col_ptr-0 → entry[0]: EOD = 1
+        row.push(1); // col_ptr-0 → entry[0]: EOD = 1
 
         // jump_table: 1 entry — column number 2 triggers the jump
-        row.push(2);   // jump_table[0] = 2
+        row.push(2); // jump_table[0] = 2
 
         // var_col_count
         row.push(var_col_count);
@@ -1099,7 +1078,7 @@ mod tests {
     #[test]
     fn read_fixed_guid() {
         let mut row_data = vec![0x01, 0x00]; // col_count
-        // GUID bytes
+                                             // GUID bytes
         let guid_bytes: [u8; 16] = [
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
             0x0F, 0x10,
@@ -1155,10 +1134,7 @@ mod tests {
     }
 
     fn assert_msysobjects_rows(rows: &[Vec<Value>], table: &TableDef) {
-        assert!(
-            !rows.is_empty(),
-            "MSysObjects should have at least one row"
-        );
+        assert!(!rows.is_empty(), "MSysObjects should have at least one row");
 
         // Find column indices
         let id_idx = table
@@ -1260,12 +1236,8 @@ mod tests {
             .iter()
             .find(|e| e.name == "MSP_PROJECTS")
             .expect("MSP_PROJECTS entry in catalog");
-        let table = crate::table::read_table_def(
-            &mut reader,
-            &entry.name,
-            entry.table_page,
-        )
-        .unwrap();
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
         let result = read_table_rows(&mut reader, &table).unwrap();
         assert!(
             !result.rows.is_empty(),
@@ -1358,11 +1330,11 @@ mod tests {
     #[test]
     fn lval_inline_empty_data() {
         // Header only, data_len = 0 → should return Some(vec![])
-        let flags: u32 = LVAL_INLINE | 0; // data_len = 0
+        let flags: u32 = LVAL_INLINE; // data_len = 0
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes()); // length_with_flags
         var_data.extend_from_slice(&[0u8; 8]); // lval_dp(4B) + unknown(4B)
-        // No payload bytes — total 12 bytes (header only)
+                                               // No payload bytes — total 12 bytes (header only)
 
         let result = read_lval_data(&var_data, None);
         assert_eq!(result, Some(vec![]));
@@ -1371,7 +1343,7 @@ mod tests {
     #[test]
     fn memo_inline_empty_returns_empty_text() {
         // Memo with inline empty data → empty string
-        let flags: u32 = LVAL_INLINE | 0;
+        let flags: u32 = LVAL_INLINE;
         let mut var_data = Vec::new();
         var_data.extend_from_slice(&flags.to_le_bytes());
         var_data.extend_from_slice(&[0u8; 8]);
@@ -1668,7 +1640,10 @@ mod tests {
         let row_data = make_jet4_row_with_fixed(&data);
         let cracked = crack_row_jet4(&row_data).unwrap();
         let col = make_col_def(ColumnType::BigInt, 8);
-        assert_eq!(read_fixed_value(&cracked, &col, false), Value::BigInt(123456789));
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::BigInt(123456789)
+        );
     }
 
     #[test]
@@ -1682,11 +1657,14 @@ mod tests {
 
     #[test]
     fn read_fixed_double() {
-        let data = 3.14f64.to_le_bytes();
+        let data = 3.125f64.to_le_bytes();
         let row_data = make_jet4_row_with_fixed(&data);
         let cracked = crack_row_jet4(&row_data).unwrap();
         let col = make_col_def(ColumnType::Double, 8);
-        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Double(3.14));
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::Double(3.125)
+        );
     }
 
     #[test]

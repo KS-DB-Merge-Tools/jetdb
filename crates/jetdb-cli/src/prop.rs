@@ -72,7 +72,11 @@ fn run_prop(args: &PropArgs) -> Result<(), jetdb::FileError> {
 
         for prop in &map.properties {
             let display_value = format_value(&prop.value);
-            println!("    {:<width$}  {display_value}", prop.name, width = name_width);
+            println!(
+                "    {:<width$}  {display_value}",
+                prop.name,
+                width = name_width
+            );
         }
     }
 
@@ -125,18 +129,12 @@ mod tests {
 
     #[test]
     fn format_value_text_quoted() {
-        assert_eq!(
-            format_value(&Value::Text("hello".to_string())),
-            "\"hello\""
-        );
+        assert_eq!(format_value(&Value::Text("hello".to_string())), "\"hello\"");
     }
 
     #[test]
     fn format_value_binary_size() {
-        assert_eq!(
-            format_value(&Value::Binary(vec![0; 42])),
-            "(42 bytes)"
-        );
+        assert_eq!(format_value(&Value::Binary(vec![0; 42])), "(42 bytes)");
     }
 
     #[test]
@@ -178,10 +176,7 @@ mod tests {
 
     #[test]
     fn format_value_text_with_backslash() {
-        assert_eq!(
-            format_value(&Value::Text("a\\b".to_string())),
-            "\"a\\\\b\""
-        );
+        assert_eq!(format_value(&Value::Text("a\\b".to_string())), "\"a\\\\b\"");
     }
 
     #[test]
@@ -197,7 +192,7 @@ mod tests {
 
     #[test]
     fn format_value_double() {
-        assert_eq!(format_value(&Value::Double(3.14)), "3.14");
+        assert_eq!(format_value(&Value::Double(3.125)), "3.125");
     }
 
     #[test]

@@ -148,9 +148,7 @@ struct QueryColumnIndexes {
     extra: Option<usize>,
 }
 
-fn resolve_query_columns(
-    columns: &[table::ColumnDef],
-) -> Result<QueryColumnIndexes, FileError> {
+fn resolve_query_columns(columns: &[table::ColumnDef]) -> Result<QueryColumnIndexes, FileError> {
     let mut object_id = None;
     let mut attribute = None;
     let mut order = None;
@@ -220,10 +218,7 @@ fn build_query_defs(
         raw_rows.sort_by(|a, b| a.order.cmp(&b.order));
 
         let type_row = raw_rows.iter().find(|r| r.attribute == ATTR_TYPE);
-        let query_type = match type_row
-            .and_then(|r| r.flag)
-            .and_then(QueryType::from_flag)
-        {
+        let query_type = match type_row.and_then(|r| r.flag).and_then(QueryType::from_flag) {
             Some(qt) => qt,
             None => continue,
         };
@@ -344,10 +339,7 @@ pub fn read_queries(reader: &mut PageReader) -> Result<Vec<QueryDef>, FileError>
 /// Restore the SQL string for a query definition.
 pub fn query_to_sql(qdef: &QueryDef) -> String {
     let mut builder = String::new();
-    let supports_standard = !matches!(
-        qdef.query_type,
-        QueryType::Passthrough | QueryType::Ddl
-    );
+    let supports_standard = !matches!(qdef.query_type, QueryType::Passthrough | QueryType::Ddl);
 
     if supports_standard {
         let params = format_parameters(&qdef.rows);
@@ -521,7 +513,9 @@ fn get_select_type(rows: &[QueryRow]) -> String {
         return "DISTINCTROW".to_string();
     }
     if has_flag(rows, TOP) {
-        let n = flag_row(rows).and_then(|r| r.name1.as_deref()).unwrap_or("");
+        let n = flag_row(rows)
+            .and_then(|r| r.name1.as_deref())
+            .unwrap_or("");
         let mut s = format!("TOP {n}");
         if has_flag(rows, PERCENT) {
             s.push_str(" PERCENT");
@@ -886,11 +880,7 @@ fn sql_update(builder: &mut String, rows: &[QueryRow]) {
         .filter_map(|r| {
             let name2 = r.name2.as_deref()?;
             let expr = r.expression.as_deref()?;
-            Some(format!(
-                "{} = {}",
-                to_optional_quoted(name2, true),
-                expr
-            ))
+            Some(format!("{} = {}", to_optional_quoted(name2, true), expr))
         })
         .collect();
     if !set_parts.is_empty() {
@@ -905,7 +895,9 @@ fn sql_update(builder: &mut String, rows: &[QueryRow]) {
 }
 
 fn sql_append(builder: &mut String, rows: &[QueryRow]) {
-    let target = type_row(rows).and_then(|r| r.name1.as_deref()).unwrap_or("");
+    let target = type_row(rows)
+        .and_then(|r| r.name1.as_deref())
+        .unwrap_or("");
 
     builder.push_str("INSERT INTO ");
     builder.push_str(&to_optional_quoted(target, true));
@@ -954,15 +946,10 @@ fn sql_append(builder: &mut String, rows: &[QueryRow]) {
 }
 
 fn sql_make_table(builder: &mut String, rows: &[QueryRow]) {
-    let target = type_row(rows).and_then(|r| r.name1.as_deref()).unwrap_or("");
-    append_select_body(
-        builder,
-        rows,
-        true,
-        Some(target),
-        &|_| true,
-        &|_| true,
-    );
+    let target = type_row(rows)
+        .and_then(|r| r.name1.as_deref())
+        .unwrap_or("");
+    append_select_body(builder, rows, true, Some(target), &|_| true, &|_| true);
 }
 
 fn sql_crosstab(builder: &mut String, rows: &[QueryRow]) {
@@ -995,13 +982,11 @@ fn sql_crosstab(builder: &mut String, rows: &[QueryRow]) {
     append_select_body(builder, rows, true, None, &normal_col, &normal_gb);
 
     // PIVOT expression: column row with PIVOT flag
-    let pivot_row = all_col_rows
-        .iter()
-        .find(|r| {
-            r.flag
-                .map(|f| (f & CROSSTAB_PIVOT_FLAG) != 0)
-                .unwrap_or(false)
-        });
+    let pivot_row = all_col_rows.iter().find(|r| {
+        r.flag
+            .map(|f| (f & CROSSTAB_PIVOT_FLAG) != 0)
+            .unwrap_or(false)
+    });
     if let Some(prow) = pivot_row {
         if let Some(ref expr) = prow.expression {
             builder.push_str("\nPIVOT ");
@@ -1162,10 +1147,7 @@ mod tests {
                 expr: "T2".to_string(),
             }),
             join_type: 1,
-            on_conditions: vec![
-                "T1.a = T2.a".to_string(),
-                "T1.b = T2.b".to_string(),
-            ],
+            on_conditions: vec!["T1.a = T2.a".to_string(), "T1.b = T2.b".to_string()],
         };
         assert_eq!(
             ts.to_sql(true),
@@ -1210,7 +1192,10 @@ mod tests {
 
     #[test]
     fn quoting_with_space() {
-        assert_eq!(to_optional_quoted("Another Table", false), "[Another Table]");
+        assert_eq!(
+            to_optional_quoted("Another Table", false),
+            "[Another Table]"
+        );
     }
 
     #[test]
@@ -1316,9 +1301,18 @@ mod tests {
         // DELETE Table1.col1, Table1.col2, Table1.col3
         // FROM Table1
         // WHERE (((Table1.col1)>"blah"));
-        assert!(sql.starts_with("DELETE "), "should start with DELETE: {sql}");
-        assert!(sql.contains("Table1.col1"), "should contain Table1.col1: {sql}");
-        assert!(sql.contains("FROM Table1"), "should contain FROM Table1: {sql}");
+        assert!(
+            sql.starts_with("DELETE "),
+            "should start with DELETE: {sql}"
+        );
+        assert!(
+            sql.contains("Table1.col1"),
+            "should contain Table1.col1: {sql}"
+        );
+        assert!(
+            sql.contains("FROM Table1"),
+            "should contain FROM Table1: {sql}"
+        );
         assert!(
             sql.contains("WHERE (((Table1.col1)>\"blah\"))"),
             "should contain WHERE clause: {sql}"
@@ -1333,9 +1327,15 @@ mod tests {
         let queries = read_queries(&mut reader).unwrap();
         let q = find_query(&queries, "SelectQuery");
         let sql = query_to_sql(q);
-        assert!(sql.starts_with("SELECT DISTINCT "), "should start with SELECT DISTINCT: {sql}");
+        assert!(
+            sql.starts_with("SELECT DISTINCT "),
+            "should start with SELECT DISTINCT: {sql}"
+        );
         assert!(sql.contains("Table1.*"), "should contain Table1.*: {sql}");
-        assert!(sql.contains("Table2.col1"), "should contain Table2.col1: {sql}");
+        assert!(
+            sql.contains("Table2.col1"),
+            "should contain Table2.col1: {sql}"
+        );
         assert!(
             sql.contains("LEFT JOIN Table3 ON Table1.col1 = Table3.col1"),
             "should contain LEFT JOIN: {sql}"
@@ -1344,7 +1344,10 @@ mod tests {
             sql.contains("INNER JOIN Table2"),
             "should contain INNER JOIN: {sql}"
         );
-        assert!(sql.contains("ORDER BY Table2.col1"), "should contain ORDER BY: {sql}");
+        assert!(
+            sql.contains("ORDER BY Table2.col1"),
+            "should contain ORDER BY: {sql}"
+        );
     }
 
     #[test]
@@ -1358,7 +1361,10 @@ mod tests {
             sql.starts_with("INSERT INTO Table3"),
             "should start with INSERT INTO Table3: {sql}"
         );
-        assert!(sql.contains("(col2, col2, col3)"), "should contain target columns: {sql}");
+        assert!(
+            sql.contains("(col2, col2, col3)"),
+            "should contain target columns: {sql}"
+        );
         assert!(sql.contains("SELECT "), "should contain SELECT: {sql}");
         assert!(
             sql.contains("INNER JOIN Table2 ON [Table1].[col1]=[Table2].[col1]"),
@@ -1377,7 +1383,10 @@ mod tests {
             sql.contains("PARAMETERS User Name Text;"),
             "should contain PARAMETERS: {sql}"
         );
-        assert!(sql.contains("UPDATE Table1"), "should contain UPDATE Table1: {sql}");
+        assert!(
+            sql.contains("UPDATE Table1"),
+            "should contain UPDATE Table1: {sql}"
+        );
         assert!(sql.contains("SET "), "should contain SET: {sql}");
         assert!(
             sql.contains("Table1.col1 = \"foo\""),
@@ -1882,10 +1891,7 @@ mod tests {
         let queries = read_queries(&mut reader).unwrap();
         let q = find_query(&queries, "UnionQuery");
         let sql = query_to_sql(q);
-        assert!(
-            sql.contains("UNION"),
-            "should contain UNION: {sql}"
-        );
+        assert!(sql.contains("UNION"), "should contain UNION: {sql}");
     }
 
     // -- sql_passthrough integration test ------------------------------------
@@ -1975,16 +1981,14 @@ mod tests {
     #[test]
     fn build_from_tables_join_both_not_found() {
         // JOIN where neither table is in existing sources
-        let rows = vec![
-            QueryRow {
-                attribute: ATTR_JOIN,
-                expression: Some("A.id = B.id".to_string()),
-                name1: Some("A".to_string()),
-                name2: Some("B".to_string()),
-                flag: Some(1),
-                extra: None,
-            },
-        ];
+        let rows = vec![QueryRow {
+            attribute: ATTR_JOIN,
+            expression: Some("A.id = B.id".to_string()),
+            name1: Some("A".to_string()),
+            name2: Some("B".to_string()),
+            flag: Some(1),
+            extra: None,
+        }];
         let result = build_from_tables(&rows);
         assert_eq!(result.len(), 1);
         assert!(result[0].contains("INNER JOIN"));

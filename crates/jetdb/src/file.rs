@@ -14,16 +14,40 @@ use crate::format::{db_header, row, FormatError, JetFormat, JetVersion};
 pub enum FileError {
     Io(std::io::Error),
     Format(FormatError),
-    FileTooSmall { expected: usize, actual: u64 },
-    PageOutOfRange { page: u32, max_page: u32 },
-    InvalidRow { page: u32, row: u16, reason: &'static str },
-    InvalidUsageMap { reason: &'static str },
-    InvalidTableDef { reason: &'static str },
-    InvalidProperty { reason: &'static str },
-    TableNotFound { name: String },
-    QueryNotFound { name: String },
-    ModuleNotFound { name: String },
-    InvalidVbaProject { reason: String },
+    FileTooSmall {
+        expected: usize,
+        actual: u64,
+    },
+    PageOutOfRange {
+        page: u32,
+        max_page: u32,
+    },
+    InvalidRow {
+        page: u32,
+        row: u16,
+        reason: &'static str,
+    },
+    InvalidUsageMap {
+        reason: &'static str,
+    },
+    InvalidTableDef {
+        reason: &'static str,
+    },
+    InvalidProperty {
+        reason: &'static str,
+    },
+    TableNotFound {
+        name: String,
+    },
+    QueryNotFound {
+        name: String,
+    },
+    ModuleNotFound {
+        name: String,
+    },
+    InvalidVbaProject {
+        reason: String,
+    },
 }
 
 impl fmt::Display for FileError {
@@ -157,7 +181,12 @@ pub struct DbHeader {
 /// Each entry is 2 bytes LE; the flag bits are masked off with `row::OFFSET_MASK`.
 /// For row 0 the upper bound is the page size; for row > 0 it is the previous
 /// row's offset.
-pub fn find_row(format: &JetFormat, page_data: &[u8], page: u32, row: u16) -> Result<(usize, usize), FileError> {
+pub fn find_row(
+    format: &JetFormat,
+    page_data: &[u8],
+    page: u32,
+    row: u16,
+) -> Result<(usize, usize), FileError> {
     let row_count_pos = format.data_row_count_pos;
     if page_data.len() < row_count_pos + 2 {
         return Err(FileError::InvalidRow {
@@ -186,8 +215,8 @@ pub fn find_row(format: &JetFormat, page_data: &[u8], page: u32, row: u16) -> Re
             reason: "row offset table overflow",
         });
     }
-    let row_start = u16::from_le_bytes([page_data[entry_pos], page_data[entry_pos + 1]])
-        & row::OFFSET_MASK;
+    let row_start =
+        u16::from_le_bytes([page_data[entry_pos], page_data[entry_pos + 1]]) & row::OFFSET_MASK;
 
     let row_end = if row == 0 {
         format.page_size as u16
@@ -276,10 +305,8 @@ impl PageReader {
         } else {
             db_header::LANG_ID_JET4
         };
-        let lang_id = u16::from_le_bytes([
-            page0_buf[lang_id_offset],
-            page0_buf[lang_id_offset + 1],
-        ]);
+        let lang_id =
+            u16::from_le_bytes([page0_buf[lang_id_offset], page0_buf[lang_id_offset + 1]]);
 
         let code_page = u16::from_le_bytes([
             page0_buf[db_header::CODE_PAGE],
@@ -336,10 +363,7 @@ impl PageReader {
 
         let max_page = self.page_count().saturating_sub(1);
         if page > max_page {
-            return Err(FileError::PageOutOfRange {
-                page,
-                max_page,
-            });
+            return Err(FileError::PageOutOfRange { page, max_page });
         }
 
         let page_size = self.header.format.page_size;
@@ -406,8 +430,8 @@ mod tests {
         rc4_transform(&key, &mut buf);
         // First 16 bytes of keystream from RFC 6229
         let expected: [u8; 16] = [
-            0xB2, 0x39, 0x63, 0x05, 0xF0, 0x3D, 0xC0, 0x27,
-            0xCC, 0xC3, 0x52, 0x4A, 0x0A, 0x11, 0x18, 0xA8,
+            0xB2, 0x39, 0x63, 0x05, 0xF0, 0x3D, 0xC0, 0x27, 0xCC, 0xC3, 0x52, 0x4A, 0x0A, 0x11,
+            0x18, 0xA8,
         ];
         assert_eq!(buf, expected);
     }
@@ -636,9 +660,13 @@ mod tests {
         let result = find_row(&JET4, &page_data, 1, 0);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(
-            matches!(err, FileError::InvalidRow { reason: "page too small for row count", .. })
-        );
+        assert!(matches!(
+            err,
+            FileError::InvalidRow {
+                reason: "page too small for row count",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -650,9 +678,13 @@ mod tests {
         let result = find_row(&JET4, &page_data, 1, 5);
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(
-            matches!(err, FileError::InvalidRow { reason: "row index exceeds row count", .. })
-        );
+        assert!(matches!(
+            err,
+            FileError::InvalidRow {
+                reason: "row index exceeds row count",
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -715,11 +747,17 @@ mod tests {
         assert!(e.to_string().contains("M1"));
         assert!(e.to_string().contains("VBA module not found"));
 
-        let e = FileError::InvalidVbaProject { reason: "corrupt".into() };
+        let e = FileError::InvalidVbaProject {
+            reason: "corrupt".into(),
+        };
         assert!(e.to_string().contains("corrupt"));
         assert!(e.to_string().contains("invalid VBA project"));
 
-        let e = FileError::InvalidRow { page: 5, row: 3, reason: "oops" };
+        let e = FileError::InvalidRow {
+            page: 5,
+            row: 3,
+            reason: "oops",
+        };
         assert!(e.to_string().contains("oops"));
         assert!(e.to_string().contains("invalid row"));
     }
@@ -745,7 +783,7 @@ mod tests {
         let e = FileError::InvalidUsageMap { reason: "r" };
         assert!(e.source().is_none());
 
-        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "io");
+        let io_err = std::io::Error::other("io");
         let e = FileError::Io(io_err);
         assert!(e.source().is_some());
 

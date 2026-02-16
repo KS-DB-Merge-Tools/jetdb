@@ -4,9 +4,7 @@ use std::process::ExitCode;
 
 use clap::{Args, ValueEnum};
 use jetdb::timestamp;
-use jetdb::{
-    read_catalog, read_table_def, read_table_rows, PageReader, Value,
-};
+use jetdb::{read_catalog, read_table_def, read_table_rows, PageReader, Value};
 
 // ---------------------------------------------------------------------------
 // CLI definition
@@ -33,7 +31,11 @@ pub struct ExportArgs {
     pub date_format: String,
 
     /// Date-time format (strftime subset, default: "%Y-%m-%d %H:%M:%S")
-    #[arg(short = 'T', long = "datetime-format", default_value = "%Y-%m-%d %H:%M:%S")]
+    #[arg(
+        short = 'T',
+        long = "datetime-format",
+        default_value = "%Y-%m-%d %H:%M:%S"
+    )]
     pub datetime_format: String,
 
     /// Binary output mode
@@ -84,8 +86,11 @@ pub struct FormatOptions {
 /// - `always_quote=false`: only quote if the value contains delimiter, newline, or `"`.
 /// - Internal `"` is doubled to `""`.
 pub fn csv_escape(value: &str, delimiter: char, always_quote: bool) -> String {
-    let needs_quote =
-        always_quote || value.contains(delimiter) || value.contains('"') || value.contains('\n') || value.contains('\r');
+    let needs_quote = always_quote
+        || value.contains(delimiter)
+        || value.contains('"')
+        || value.contains('\n')
+        || value.contains('\r');
     if !needs_quote {
         return value.to_string();
     }
@@ -107,7 +112,11 @@ pub fn format_value(value: &Value, opts: &FormatOptions) -> String {
         Value::Null => csv_escape(&opts.null_string, opts.delimiter, false),
         Value::Bool(b) => {
             if opts.boolean_words {
-                if *b { "TRUE".to_string() } else { "FALSE".to_string() }
+                if *b {
+                    "TRUE".to_string()
+                } else {
+                    "FALSE".to_string()
+                }
             } else if *b {
                 "1".to_string()
             } else {
@@ -195,9 +204,7 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
 
     let entry = catalog
         .iter()
-        .find(|e| {
-            e.object_type == jetdb::format::ObjectType::Table && e.name == args.table
-        })
+        .find(|e| e.object_type == jetdb::format::ObjectType::Table && e.name == args.table)
         .ok_or(jetdb::FileError::TableNotFound {
             name: args.table.clone(),
         })?;
@@ -224,8 +231,7 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
             .iter()
             .map(|&i| csv_escape(&tdef.columns[i].name, delimiter, false))
             .collect();
-        writeln!(out, "{}", header.join(&delim_str))
-            .map_err(jetdb::FileError::Io)?;
+        writeln!(out, "{}", header.join(&delim_str)).map_err(jetdb::FileError::Io)?;
     }
 
     // Data rows
@@ -235,8 +241,7 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
             .iter()
             .map(|&i| format_value(&row[i], &opts))
             .collect();
-        writeln!(out, "{}", fields.join(&delim_str))
-            .map_err(jetdb::FileError::Io)?;
+        writeln!(out, "{}", fields.join(&delim_str)).map_err(jetdb::FileError::Io)?;
     }
 
     out.flush().map_err(jetdb::FileError::Io)?;
@@ -359,7 +364,7 @@ mod tests {
     #[test]
     fn format_value_double() {
         let opts = default_opts();
-        assert_eq!(format_value(&Value::Double(3.14), &opts), "3.14");
+        assert_eq!(format_value(&Value::Double(3.125), &opts), "3.125");
     }
 
     #[test]
@@ -430,10 +435,7 @@ mod tests {
     fn format_value_binary_strip() {
         let mut opts = default_opts();
         opts.bin_mode = BinMode::Strip;
-        assert_eq!(
-            format_value(&Value::Binary(vec![0xde, 0xad]), &opts),
-            ""
-        );
+        assert_eq!(format_value(&Value::Binary(vec![0xde, 0xad]), &opts), "");
     }
 
     #[test]

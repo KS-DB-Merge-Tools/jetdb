@@ -244,10 +244,7 @@ pub fn generate_create_indexes(dialect: &dyn DdlDialect, tdef: &TableDef) -> Str
 }
 
 /// Generate ALTER TABLE ADD FOREIGN KEY statements.
-pub fn generate_foreign_keys(
-    dialect: &dyn DdlDialect,
-    relationships: &[&Relationship],
-) -> String {
+pub fn generate_foreign_keys(dialect: &dyn DdlDialect, relationships: &[&Relationship]) -> String {
     let mut out = String::new();
 
     for rel in relationships {
@@ -508,10 +505,7 @@ mod tests {
     fn postgres_map_timestamp() {
         let d = postgres();
         let c = col("x", ColumnType::Timestamp, 0, 0, 0, 0);
-        assert_eq!(
-            d.map_column_type(&c, false),
-            "TIMESTAMP WITHOUT TIME ZONE"
-        );
+        assert_eq!(d.map_column_type(&c, false), "TIMESTAMP WITHOUT TIME ZONE");
     }
 
     #[test]
@@ -682,15 +676,7 @@ mod tests {
         let d = postgres();
         let tdef = table(
             "T",
-            vec![col_with_num(
-                "id",
-                ColumnType::Long,
-                0,
-                0,
-                0,
-                0,
-                1,
-            )],
+            vec![col_with_num("id", ColumnType::Long, 0, 0, 0, 0, 1)],
             vec![index(
                 "PrimaryKey",
                 &[1],
@@ -764,10 +750,7 @@ mod tests {
             result.contains("INT NOT NULL AUTO_INCREMENT"),
             "got:\n{result}"
         );
-        assert!(
-            result.contains("PRIMARY KEY (`id`)"),
-            "got:\n{result}"
-        );
+        assert!(result.contains("PRIMARY KEY (`id`)"), "got:\n{result}");
     }
 
     #[test]
@@ -793,14 +776,8 @@ mod tests {
             )],
         );
         let result = generate_create_table(&*d, &tdef, &[]);
-        assert!(
-            result.contains("COUNTER NOT NULL"),
-            "got:\n{result}"
-        );
-        assert!(
-            result.contains("PRIMARY KEY ([id])"),
-            "got:\n{result}"
-        );
+        assert!(result.contains("COUNTER NOT NULL"), "got:\n{result}");
+        assert!(result.contains("PRIMARY KEY ([id])"), "got:\n{result}");
     }
 
     // ========================================================================
@@ -816,10 +793,7 @@ mod tests {
             vec![index("idx_B", &[2], 0, index_type::NORMAL, 1)],
         );
         let result = generate_create_indexes(&*d, &tdef);
-        assert_eq!(
-            result,
-            "CREATE INDEX \"idx_B\" ON \"T\" (\"B\");\n"
-        );
+        assert_eq!(result, "CREATE INDEX \"idx_B\" ON \"T\" (\"B\");\n");
     }
 
     #[test]
@@ -828,13 +802,16 @@ mod tests {
         let tdef = table(
             "T",
             vec![col_with_num("B", ColumnType::Long, 0, 0, 0, 0, 2)],
-            vec![index("idx_B", &[2], index_flags::UNIQUE, index_type::NORMAL, 1)],
+            vec![index(
+                "idx_B",
+                &[2],
+                index_flags::UNIQUE,
+                index_type::NORMAL,
+                1,
+            )],
         );
         let result = generate_create_indexes(&*d, &tdef);
-        assert_eq!(
-            result,
-            "CREATE UNIQUE INDEX \"idx_B\" ON \"T\" (\"B\");\n"
-        );
+        assert_eq!(result, "CREATE UNIQUE INDEX \"idx_B\" ON \"T\" (\"B\");\n");
     }
 
     #[test]
@@ -874,7 +851,7 @@ mod tests {
     #[test]
     fn foreign_key_postgres() {
         let d = postgres();
-        let rels = vec![relationship(
+        let rels = [relationship(
             "fk_child_parent",
             "Child",
             "Parent",
@@ -897,7 +874,7 @@ mod tests {
     fn foreign_key_cascade() {
         use crate::relationship::relationship_flags;
         let d = postgres();
-        let rels = vec![relationship(
+        let rels = [relationship(
             "fk1",
             "Child",
             "Parent",
@@ -906,36 +883,18 @@ mod tests {
         )];
         let refs: Vec<&Relationship> = rels.iter().collect();
         let result = generate_foreign_keys(&*d, &refs);
-        assert!(
-            result.contains("ON UPDATE CASCADE"),
-            "got:\n{result}"
-        );
-        assert!(
-            result.contains("ON DELETE CASCADE"),
-            "got:\n{result}"
-        );
+        assert!(result.contains("ON UPDATE CASCADE"), "got:\n{result}");
+        assert!(result.contains("ON DELETE CASCADE"), "got:\n{result}");
     }
 
     #[test]
     fn foreign_key_no_cascade() {
         let d = postgres();
-        let rels = vec![relationship(
-            "fk1",
-            "Child",
-            "Parent",
-            &[("pid", "id")],
-            0,
-        )];
+        let rels = [relationship("fk1", "Child", "Parent", &[("pid", "id")], 0)];
         let refs: Vec<&Relationship> = rels.iter().collect();
         let result = generate_foreign_keys(&*d, &refs);
-        assert!(
-            !result.contains("ON UPDATE"),
-            "got:\n{result}"
-        );
-        assert!(
-            !result.contains("ON DELETE"),
-            "got:\n{result}"
-        );
+        assert!(!result.contains("ON UPDATE"), "got:\n{result}");
+        assert!(!result.contains("ON DELETE"), "got:\n{result}");
     }
 
     // ========================================================================
@@ -994,15 +953,13 @@ mod tests {
             table(
                 "Parent",
                 vec![col_with_num("id", ColumnType::Long, 0, 0, 0, 0, 1)],
-                vec![
-                    index(
-                        "PrimaryKey",
-                        &[1],
-                        index_flags::UNIQUE | index_flags::REQUIRED,
-                        index_type::NORMAL,
-                        0,
-                    ),
-                ],
+                vec![index(
+                    "PrimaryKey",
+                    &[1],
+                    index_flags::UNIQUE | index_flags::REQUIRED,
+                    index_type::NORMAL,
+                    0,
+                )],
             ),
             table(
                 "Child",
@@ -1022,14 +979,17 @@ mod tests {
                 ],
             ),
         ];
-        let rels = vec![relationship("fk1", "Child", "Parent", &[("pid", "id")], 0)];
+        let rels = [relationship("fk1", "Child", "Parent", &[("pid", "id")], 0)];
         let result = generate_ddl(&*d, &tables, &rels, true, true);
 
         // Should contain CREATE TABLE for both
         assert!(result.contains("CREATE TABLE \"Parent\""), "got:\n{result}");
         assert!(result.contains("CREATE TABLE \"Child\""), "got:\n{result}");
         // Should contain CREATE INDEX
-        assert!(result.contains("CREATE INDEX \"idx_pid\""), "got:\n{result}");
+        assert!(
+            result.contains("CREATE INDEX \"idx_pid\""),
+            "got:\n{result}"
+        );
         // Should contain ALTER TABLE FK
         assert!(
             result.contains("ALTER TABLE \"Child\" ADD CONSTRAINT \"fk1\""),
@@ -1046,10 +1006,7 @@ mod tests {
             vec![index("idx_B", &[2], 0, index_type::NORMAL, 1)],
         )];
         let result = generate_ddl(&*d, &tables, &[], false, true);
-        assert!(
-            !result.contains("CREATE INDEX"),
-            "got:\n{result}"
-        );
+        assert!(!result.contains("CREATE INDEX"), "got:\n{result}");
     }
 
     #[test]
@@ -1062,10 +1019,7 @@ mod tests {
         )];
         let rels = vec![relationship("fk1", "T", "Other", &[("id", "id")], 0)];
         let result = generate_ddl(&*d, &tables, &rels, true, false);
-        assert!(
-            !result.contains("ALTER TABLE"),
-            "got:\n{result}"
-        );
+        assert!(!result.contains("ALTER TABLE"), "got:\n{result}");
     }
 
     // ========================================================================
@@ -1080,7 +1034,15 @@ mod tests {
             "Table1",
             vec![
                 col_with_num("id", ColumnType::Long, 0, 0, 0, 0, 1),
-                col_with_num("fk_col", ColumnType::Long, 0, column_flags::NULLABLE, 0, 0, 2),
+                col_with_num(
+                    "fk_col",
+                    ColumnType::Long,
+                    0,
+                    column_flags::NULLABLE,
+                    0,
+                    0,
+                    2,
+                ),
             ],
             vec![],
         )];
@@ -1474,7 +1436,7 @@ mod tests {
     #[test]
     fn foreign_key_multi_column() {
         let d = postgres();
-        let rels = vec![relationship(
+        let rels = [relationship(
             "fk_composite",
             "Child",
             "Parent",
