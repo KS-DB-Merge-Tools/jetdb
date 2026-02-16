@@ -1,5 +1,9 @@
 # jetdb
 
+[![CI](https://github.com/dominion525/jetdb/actions/workflows/ci.yml/badge.svg)](https://github.com/dominion525/jetdb/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
+[![MSRV: 1.82](https://img.shields.io/badge/MSRV-1.82-orange)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
+
 [English](README.md)
 
 Microsoft Access のデータベースファイル (.mdb / .accdb) を Rust から直接読み取れるライブラリと CLI ツールです。
