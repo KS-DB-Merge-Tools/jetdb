@@ -92,6 +92,7 @@ pub fn read_table_rows(
             }
             // Skip overflow/lookup rows (multi-page rows not yet supported)
             if row_ptr & row::LOOKUP_FLAG != 0 {
+                skipped_rows += 1;
                 continue;
             }
 

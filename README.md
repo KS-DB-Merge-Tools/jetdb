@@ -114,6 +114,7 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 - Loads all rows into memory; be mindful of memory usage with very large tables
 - Password-protected databases are not supported
 - Replication databases (.mda) are untested
+- Multi-page overflow rows (LOOKUP_FLAG) are skipped; some large memo/OLE fields may be missing
 
 ## Acknowledgments
 
