@@ -13,23 +13,36 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test (${{ matrix.os }})
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: ubuntu-latest
-            run-clippy: true
-    runs-on: ${{ matrix.os }}
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: ${{ matrix.run-clippy && 'clippy' || '' }}
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - if: matrix.run-clippy
-        run: cargo clippy -- -D warnings
+      - run: cargo clippy -- -D warnings
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: [clippy, audit]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo test
 
   coverage:
@@ -54,15 +67,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace
-
-  audit:
-    name: Audit
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: taiki-e/install-action@cargo-audit
-      - run: cargo audit
 
   complexity:
     name: Complexity
