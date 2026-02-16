@@ -49,8 +49,7 @@ jetdb vba list database.mdb
 jetdb vba show database.mdb Module1
 
 # オブジェクトプロパティを表示する
-jetdb prop list database.mdb Table1
-jetdb prop show database.mdb Table1
+jetdb prop database.mdb Table1
 ```
 
 詳しいオプションや出力例は [docs/cli.ja.md](docs/cli.ja.md) にまとめてあります。

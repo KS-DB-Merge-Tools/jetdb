@@ -245,6 +245,42 @@ FROM [Table1]
 WHERE (([Table1].[col1]="foo"));
 ```
 
+### prop — オブジェクトプロパティの表示
+
+```
+jetdb prop <FILE> <OBJECT_NAME>
+```
+
+テーブルやクエリなどのデータベースオブジェクトの LvProp (軽量プロパティ) 値を表示する。
+プロパティはテーブル全体、カラムごと、追加プロパティの各マップに分けて出力される。
+
+#### 出力例
+
+```
+$ jetdb prop test.mdb Table1
+Object: Table1
+
+  Table Properties:
+    Orientation  0
+    OrderByOn    no
+    NameMap      (496 bytes)
+    GUID         {5A29A676-1145-4D1A-AE47-9F5415CDF2F1}
+    DefaultView  2
+
+  Column: A
+    ColumnWidth         -1
+    ColumnOrder         0
+    ColumnHidden        no
+    Required            no
+    AllowZeroLength     no
+    DisplayControl      109
+    UnicodeCompression  yes
+    GUID                {E9EDD90C-CE55-4151-ABE1-A1ACE1007515}
+    IMEMode             0
+    IMESentenceMode     3
+  ...
+```
+
 ### vba — VBA モジュールの管理
 
 #### vba list — VBA モジュール名の一覧表示

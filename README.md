@@ -49,8 +49,7 @@ jetdb vba list database.mdb
 jetdb vba show database.mdb Module1
 
 # Show object properties
-jetdb prop list database.mdb Table1
-jetdb prop show database.mdb Table1
+jetdb prop database.mdb Table1
 ```
 
 See [docs/cli.md](docs/cli.md) for detailed options and output examples.

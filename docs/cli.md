@@ -245,6 +245,43 @@ FROM [Table1]
 WHERE (([Table1].[col1]="foo"));
 ```
 
+### prop — Show object properties
+
+```
+jetdb prop <FILE> <OBJECT_NAME>
+```
+
+Display the LvProp (Lightweight Property) values for a database object
+such as a table or query. Properties are grouped into table-level,
+per-column, and additional property maps.
+
+#### Output examples
+
+```
+$ jetdb prop test.mdb Table1
+Object: Table1
+
+  Table Properties:
+    Orientation  0
+    OrderByOn    no
+    NameMap      (496 bytes)
+    GUID         {5A29A676-1145-4D1A-AE47-9F5415CDF2F1}
+    DefaultView  2
+
+  Column: A
+    ColumnWidth         -1
+    ColumnOrder         0
+    ColumnHidden        no
+    Required            no
+    AllowZeroLength     no
+    DisplayControl      109
+    UnicodeCompression  yes
+    GUID                {E9EDD90C-CE55-4151-ABE1-A1ACE1007515}
+    IMEMode             0
+    IMESentenceMode     3
+  ...
+```
+
 ### vba — Manage VBA modules
 
 #### vba list — List VBA module names
