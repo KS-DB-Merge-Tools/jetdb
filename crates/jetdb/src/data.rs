@@ -639,7 +639,7 @@ fn read_lval_data(
 
         while pg_row != 0 {
             if !visited.insert(pg_row) {
-                break; // circular reference
+                return None; // circular reference — partial data is unreliable
             }
             let row_data = reader.read_pg_row(pg_row).ok()?;
             if row_data.len() < 4 {
