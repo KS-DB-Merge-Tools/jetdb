@@ -275,7 +275,8 @@ fn extract_vba_project_cfb(cfb_bytes: Vec<u8>) -> Result<Vec<u8>, FileError> {
     let entries: Vec<(String, bool)> = source
         .walk()
         .filter_map(|e| {
-            let path = e.path().display().to_string();
+            // Use '/' separators regardless of OS (CFB paths are internal, not filesystem)
+            let path = e.path().to_string_lossy().replace('\\', "/");
             if path.starts_with(PREFIX) && path.len() > PREFIX.len() {
                 let relative = &path[PREFIX.len()..];
                 Some((relative.to_string(), e.is_storage()))
