@@ -1,3 +1,5 @@
+//! Table definition (TDEF page) parsing: columns, indexes, and data page lists.
+
 use std::collections::HashSet;
 
 use crate::encoding;

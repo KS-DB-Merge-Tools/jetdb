@@ -1,3 +1,5 @@
+//! Page usage map (bitmap) traversal for locating table data pages.
+
 use crate::file::{FileError, PageReader};
 use crate::format::{usage_map, PageType};
 

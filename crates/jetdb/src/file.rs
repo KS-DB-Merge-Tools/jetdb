@@ -1,3 +1,5 @@
+//! Page-level I/O, RC4 decryption, and database header parsing.
+
 use std::fmt;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};

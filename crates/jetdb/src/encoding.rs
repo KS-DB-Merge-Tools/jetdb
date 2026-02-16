@@ -1,3 +1,5 @@
+//! Text decoding: Latin-1 (Jet3), UTF-16LE (Jet4+), and Unicode compression.
+
 use crate::format::FormatError;
 
 /// Compressed-text header: `0xFF 0xFE`.

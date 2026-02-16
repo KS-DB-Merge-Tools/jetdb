@@ -1,3 +1,5 @@
+//! Data row reading and value extraction from table pages.
+
 use std::collections::HashSet;
 
 use crate::encoding;

@@ -1,3 +1,5 @@
+//! DDL (CREATE TABLE / INDEX / FOREIGN KEY) generation for multiple SQL dialects.
+
 pub mod access;
 pub mod mysql;
 pub mod postgres;

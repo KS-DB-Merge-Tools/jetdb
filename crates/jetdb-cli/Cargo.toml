@@ -1,6 +1,6 @@
 [package]
 name = "jetdb-cli"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "CLI tool for reading Microsoft Access (.mdb/.accdb) files"
@@ -8,6 +8,8 @@ repository = "https://github.com/dominion525/jetdb"
 readme = "../../README.md"
 keywords = ["access", "mdb", "accdb", "jet", "cli"]
 categories = ["command-line-utilities", "database"]
+rust-version = "1.82"
+exclude = ["testdata/", "AGENTS*", "CLAUDE*", ".claude/"]
 
 [[bin]]
 name = "jetdb"

@@ -1,3 +1,5 @@
+//! Jet/ACE database format constants, version detection, and layout definitions.
+
 use std::fmt;
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+//! Table relationship (foreign key) reading from MSysRelationships.
+
 use std::collections::BTreeMap;
 
 use crate::catalog::read_catalog;

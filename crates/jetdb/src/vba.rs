@@ -1,3 +1,5 @@
+//! VBA project and module source code extraction.
+
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read as _, Write};
 

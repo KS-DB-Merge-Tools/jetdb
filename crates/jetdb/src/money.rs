@@ -1,3 +1,5 @@
+//! Money and Numeric fixed-point value formatting.
+
 /// Convert an 8-byte Money value (i64 LE, scale 4) to a string.
 ///
 /// The raw value is a fixed-point integer with 4 decimal places.

@@ -1,3 +1,5 @@
+//! MSysObjects system catalog reading and table discovery.
+
 use crate::data::{self, Value};
 use crate::file::{FileError, PageReader};
 use crate::format::{catalog_flags, ObjectType, CATALOG_PAGE};

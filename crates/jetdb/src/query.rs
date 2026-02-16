@@ -1,3 +1,5 @@
+//! Stored query reading and SQL reconstruction from MSysQueries.
+
 use std::collections::BTreeMap;
 
 use crate::catalog::read_catalog;

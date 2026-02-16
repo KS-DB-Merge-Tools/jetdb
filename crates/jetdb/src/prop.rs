@@ -1,3 +1,5 @@
+//! Object property reading from MSysObjects.LvProp blobs.
+
 use crate::data::{self, format_guid, Value};
 use crate::encoding;
 use crate::file::{FileError, PageReader};
