@@ -1,0 +1,385 @@
+# jetdb CLI
+
+A read-only command-line tool for Microsoft Access database files (.mdb / .accdb).
+
+## Installation
+
+```bash
+cargo install --path crates/jetdb-cli
+```
+
+## Subcommands
+
+### ver — Show database engine version
+
+```
+jetdb ver [OPTIONS] <FILE>
+```
+
+Display the Jet/ACE engine version of the database file.
+
+#### Options
+
+- `-l`, `--long` — Show detailed version information
+
+#### Output examples
+
+```
+$ jetdb ver testV2003.mdb
+JET4
+
+$ jetdb ver -l testV2003.mdb
+Jet4 (Access 2000/2003)
+```
+
+#### Version list
+
+Short name   Details
+JET3         Jet3 (Access 97)
+JET4         Jet4 (Access 2000/2003)
+ACE12        ACE12 (Access 2007)
+ACE14        ACE14 (Access 2010)
+ACE15        ACE15 (Access 2013)
+ACE16        ACE16 (Access 2016)
+ACE17        ACE17 (Access 2019)
+
+### tables — List tables
+
+```
+jetdb tables [OPTIONS] <FILE>
+```
+
+Output the table names in the database, one per line.
+
+#### Options
+
+- `-s`, `--system` — Include system tables (those with SYSTEM/HIDDEN flags)
+- `-t`, `--show-type` — Prefix each line with the type number (tab-separated)
+- `-T`, `--show-type-name` — Prefix each line with the type name (tab-separated)
+
+`-t` and `-T` are mutually exclusive (cannot be used together).
+
+#### Output examples
+
+```
+$ jetdb tables test.mdb
+Table1
+Table2
+
+$ jetdb tables -s test.mdb
+MSysObjects
+MSysACEs
+Table1
+Table2
+
+$ jetdb tables -t test.mdb
+1	Table1
+1	Table2
+
+$ jetdb tables -T test.mdb
+table	Table1
+table	Table2
+
+$ jetdb tables -s -T test.mdb
+systable	MSysObjects
+systable	MSysACEs
+table	Table1
+table	Table2
+```
+
+#### Type names
+
+Type names displayed with -T:
+
+Name          Condition
+table         Regular user table
+systable      Table with SYSTEM or HIDDEN flag
+
+### schema — Show table schema
+
+```
+jetdb schema [OPTIONS] <FILE>
+```
+
+Display column definitions, indexes, and relationships of tables.
+When the `--ddl` option is specified, output as SQL DDL (CREATE TABLE, etc.).
+
+#### Options
+
+- `-T`, `--table <NAME>` — Show only the specified table
+- `--ddl <DIALECT>` — Output as DDL in the specified dialect (sqlite, postgres, mysql, access)
+- `--no-indexes` — Omit index definitions
+- `--no-relations` — Omit relationship definitions
+
+#### Output examples
+
+```
+$ jetdb schema test.mdb -T Table1
+Table: Table1
+
+  Columns:
+    A  Text(100)
+    B  Text(200)
+    C  Byte
+    D  Int
+    E  Long
+    F  Double
+    G  Timestamp
+    H  Money
+    I  Boolean
+
+  Indexes:
+    B           [B ASC]
+    PrimaryKey  [A ASC]  UNIQUE REQUIRED
+
+$ jetdb schema test.mdb --ddl sqlite -T Table1
+CREATE TABLE "Table1" (
+    "A" TEXT,
+    "B" TEXT,
+    "C" INTEGER,
+    "D" INTEGER,
+    "E" INTEGER,
+    "F" REAL,
+    "G" TEXT,
+    "H" NUMERIC,
+    "I" INTEGER,
+    PRIMARY KEY ("A")
+);
+
+CREATE INDEX "B" ON "Table1" ("B");
+
+$ jetdb schema indexTest.mdb --ddl postgres
+CREATE TABLE "Table1" (
+    "id" INTEGER,
+    "otherfk1" INTEGER,
+    "otherfk2" INTEGER,
+    "data" VARCHAR(100),
+    "otherfk3" INTEGER,
+    PRIMARY KEY ("id")
+);
+
+CREATE TABLE "Table2" (
+    "id" INTEGER,
+    "data" VARCHAR(100),
+    PRIMARY KEY ("id")
+);
+
+CREATE TABLE "Table3" (
+    "id" INTEGER,
+    "data" VARCHAR(100),
+    PRIMARY KEY ("id")
+);
+
+CREATE INDEX "id" ON "Table1" ("id");
+
+CREATE INDEX "id" ON "Table2" ("id");
+
+CREATE INDEX "id" ON "Table3" ("id");
+
+ALTER TABLE "Table1" ADD CONSTRAINT "Table2Table1"
+    FOREIGN KEY ("otherfk1") REFERENCES "Table2" ("id")
+    ON DELETE CASCADE;
+ALTER TABLE "Table1" ADD CONSTRAINT "Table3Table1"
+    FOREIGN KEY ("otherfk2") REFERENCES "Table3" ("id")
+    ON UPDATE CASCADE;
+```
+
+#### DDL dialect list
+
+Name       Description
+sqlite     SQLite
+postgres   PostgreSQL
+mysql      MySQL
+access     Access SQL
+
+### queries — Manage saved queries
+
+#### queries list — List saved query names
+
+```
+jetdb queries list [OPTIONS] <FILE>
+```
+
+List the names of saved queries in the database (space-separated by default).
+
+##### Options
+
+- `-1`, `--newline` — Print one query name per line
+- `-d`, `--delimiter <STRING>` — Custom delimiter between query names (default: space)
+
+##### Output examples
+
+```
+$ jetdb queries list queryTest.mdb
+AppendQuery CrosstabQuery DataDefinitionQuery DeleteQuery MakeTableQuery PassthroughQuery SelectQuery UnionQuery UpdateQuery
+
+$ jetdb queries list -1 queryTest.mdb
+AppendQuery
+CrosstabQuery
+DataDefinitionQuery
+DeleteQuery
+MakeTableQuery
+PassthroughQuery
+SelectQuery
+UnionQuery
+UpdateQuery
+
+$ jetdb queries list test.mdb
+(no output — database has no saved queries)
+```
+
+#### queries show — Show query SQL
+
+```
+jetdb queries show <FILE> <QUERY_NAME>
+```
+
+Show the restored SQL definition of the specified saved query.
+
+##### Output examples
+
+```
+$ jetdb queries show queryTest.mdb DeleteQuery
+DELETE [Table1].[col1], [Table1].[col2], [Table1].[col3]
+FROM [Table1]
+WHERE (([Table1].[col1]="foo"));
+```
+
+### prop — Show object properties
+
+```
+jetdb prop <FILE> <OBJECT_NAME>
+```
+
+Display the LvProp (Lightweight Property) values for a database object
+such as a table or query. Properties are grouped into table-level,
+per-column, and additional property maps.
+
+#### Output examples
+
+```
+$ jetdb prop test.mdb Table1
+Object: Table1
+
+  Table Properties:
+    Orientation  0
+    OrderByOn    no
+    NameMap      (496 bytes)
+    GUID         {5A29A676-1145-4D1A-AE47-9F5415CDF2F1}
+    DefaultView  2
+
+  Column: A
+    ColumnWidth         -1
+    ColumnOrder         0
+    ColumnHidden        no
+    Required            no
+    AllowZeroLength     no
+    DisplayControl      109
+    UnicodeCompression  yes
+    GUID                {E9EDD90C-CE55-4151-ABE1-A1ACE1007515}
+    IMEMode             0
+    IMESentenceMode     3
+  ...
+```
+
+### vba — Manage VBA modules
+
+#### vba list — List VBA module names
+
+```
+jetdb vba list [OPTIONS] <FILE>
+```
+
+List the names of VBA modules in the database (space-separated by default, sorted alphabetically).
+If the database has no VBA project, produces no output.
+
+##### Options
+
+- `-1`, `--newline` — Print one module name per line
+- `-d`, `--delimiter <STRING>` — Custom delimiter between module names (default: space)
+
+##### Output examples
+
+```
+$ jetdb vba list vbaTest.mdb
+Class1 Form_Form1 Module1
+
+$ jetdb vba list -1 vbaTest.mdb
+Class1
+Form_Form1
+Module1
+
+$ jetdb vba list -d "|" vbaTest.mdb
+Class1|Form_Form1|Module1
+
+$ jetdb vba list test.mdb
+(no output — database has no VBA project)
+```
+
+#### vba show — Show VBA module source code
+
+```
+jetdb vba show <FILE> <MODULE_NAME>
+```
+
+Show the source code of the specified VBA module.
+
+##### Output examples
+
+```
+$ jetdb vba show vbaTest.mdb Module1
+Attribute VB_Name = "Module1"
+Option Compare Database
+Option Explicit
+
+Public Function Hello() As String
+    Hello = "Hello, World!"
+End Function
+...
+```
+
+### export — Export table data as CSV
+
+```
+jetdb export [OPTIONS] <FILE> <TABLE>
+```
+
+Export all rows from a table as RFC 4180 compliant CSV to standard output.
+By default, replication system columns are excluded.
+
+#### Options
+
+- `-H`, `--no-header` — Suppress the header row
+- `-d`, `--delimiter <CHAR>` — Column delimiter (default: `,`)
+- `-D`, `--date-format <FMT>` — Date format, strftime subset (default: `%Y-%m-%d`)
+- `-T`, `--datetime-format <FMT>` — Date-time format, strftime subset (default: `%Y-%m-%d %H:%M:%S`)
+- `-b`, `--bin <MODE>` — Binary output mode (default: `hex`)
+- `-0`, `--null <STRING>` — String to represent NULL values (default: empty string)
+- `-B`, `--boolean-words` — Output booleans as TRUE/FALSE instead of 1/0
+- `-s`, `--system-columns` — Include replication system columns
+
+#### Output examples
+
+```
+$ jetdb export test.mdb Table1
+A,B,C,D,E,F,G,H,I
+"foo","bar",1,2,3,1.5,2003-01-02,"12.3400",1
+
+$ jetdb export test.mdb Table1 -H
+"foo","bar",1,2,3,1.5,2003-01-02,"12.3400",1
+
+$ jetdb export test.mdb Table1 -d "\t"
+A	B	C	D	E	F	G	H	I
+
+$ jetdb export test.mdb Table1 -B
+A,B,C,D,E,F,G,H,I
+"foo","bar",1,2,3,1.5,2003-01-02,"12.3400",TRUE
+```
+
+#### Binary output modes
+
+Name     Description
+strip    Omit binary data (empty string)
+raw      Output as raw bytes (lossy UTF-8)
+octal    Each byte as \NNN octal escape
+hex      Each byte as lowercase hex (default)

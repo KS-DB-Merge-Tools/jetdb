@@ -1,0 +1,108 @@
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Args, Subcommand};
+use jetdb::{read_vba_project, PageReader};
+
+// ---------------------------------------------------------------------------
+// CLI definition
+// ---------------------------------------------------------------------------
+
+#[derive(Args)]
+pub struct VbaArgs {
+    #[command(subcommand)]
+    pub command: VbaCommands,
+}
+
+#[derive(Subcommand)]
+pub enum VbaCommands {
+    /// List VBA module names
+    List(VbaListArgs),
+    /// Show VBA module source code
+    Show(VbaShowArgs),
+}
+
+#[derive(Args)]
+pub struct VbaListArgs {
+    /// Database file path (.mdb / .accdb)
+    pub file: PathBuf,
+
+    /// Print one module name per line
+    #[arg(short = '1', long = "newline", conflicts_with = "delimiter")]
+    pub newline: bool,
+
+    /// Delimiter between module names (default: space)
+    #[arg(short = 'd', long = "delimiter")]
+    pub delimiter: Option<String>,
+}
+
+#[derive(Args)]
+pub struct VbaShowArgs {
+    /// Database file path (.mdb / .accdb)
+    pub file: PathBuf,
+
+    /// Module name
+    pub module_name: String,
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+pub fn cmd_vba(args: VbaArgs) -> ExitCode {
+    match args.command {
+        VbaCommands::List(a) => match run_list(&a) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                log::error!("{e}");
+                ExitCode::FAILURE
+            }
+        },
+        VbaCommands::Show(a) => match run_show(&a) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                log::error!("{e}");
+                ExitCode::FAILURE
+            }
+        },
+    }
+}
+
+fn run_list(args: &VbaListArgs) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open(&args.file)?;
+    let project = read_vba_project(&mut reader)?;
+
+    let mut names: Vec<&str> = project.modules.iter().map(|m| m.name.as_str()).collect();
+    names.sort_unstable();
+
+    if names.is_empty() {
+        return Ok(());
+    }
+    if args.newline {
+        for name in &names {
+            println!("{name}");
+        }
+    } else if let Some(ref delim) = args.delimiter {
+        println!("{}", names.join(delim));
+    } else {
+        println!("{}", names.join(" "));
+    }
+
+    Ok(())
+}
+
+fn run_show(args: &VbaShowArgs) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open(&args.file)?;
+    let project = read_vba_project(&mut reader)?;
+
+    let module = project
+        .modules
+        .iter()
+        .find(|m| m.name == args.module_name)
+        .ok_or(jetdb::FileError::ModuleNotFound {
+            name: args.module_name.clone(),
+        })?;
+    println!("{}", module.source);
+
+    Ok(())
+}

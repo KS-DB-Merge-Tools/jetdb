@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/jetdb", "crates/jetdb-cli"]
+resolver = "2"
