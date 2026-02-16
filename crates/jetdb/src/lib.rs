@@ -1,4 +1,4 @@
-#![doc = include_str!("../../../docs/lib.md")]
+#![doc = include_str!("lib_doc.md")]
 
 pub mod catalog;
 pub mod data;

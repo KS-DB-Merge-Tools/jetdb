@@ -15,14 +15,14 @@ Written in pure Rust with no C/C++ dependencies or FFI, so it works out of the b
 ### CLI Tool
 
 ```bash
-cargo install --path crates/jetdb-cli
+cargo install jetdb-cli
 ```
 
 ### As a Library
 
 ```toml
 [dependencies]
-jetdb = { git = "https://github.com/dominion525/jetdb" }
+jetdb = "0.1.1"
 ```
 
 ## CLI Usage
