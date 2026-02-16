@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read as _, Write};
 
 use crate::catalog;
@@ -360,7 +360,8 @@ fn find_vba_project_entries(entries: &[StorageEntry]) -> Option<(i32, Vec<&Stora
         .find(|e| e.name == "VBAProject" && is_storage(e))?;
 
     let mut children = Vec::new();
-    collect_children(entries, vba_project.id, &mut children);
+    let mut visited = HashSet::new();
+    collect_children(entries, vba_project.id, &mut children, &mut visited);
     Some((vba_project.id, children))
 }
 
@@ -369,11 +370,12 @@ fn collect_children<'a>(
     entries: &'a [StorageEntry],
     parent_id: i32,
     result: &mut Vec<&'a StorageEntry>,
+    visited: &mut HashSet<i32>,
 ) {
     for entry in entries {
-        if entry.parent_id == parent_id {
+        if entry.parent_id == parent_id && visited.insert(entry.id) {
             result.push(entry);
-            collect_children(entries, entry.id, result);
+            collect_children(entries, entry.id, result, visited);
         }
     }
 }

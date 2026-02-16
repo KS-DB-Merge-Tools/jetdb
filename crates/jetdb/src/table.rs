@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::encoding;
 use crate::file::{FileError, PageReader};
 use crate::format::{ColumnType, JetFormat, PageType, MAX_INDEX_COLUMNS};
@@ -220,7 +222,13 @@ fn build_tdef_buffer(reader: &mut PageReader, tdef_page: u32) -> Result<Vec<u8>,
     let mut buf = first_page;
 
     // Follow continuation pages (skip their 8-byte header)
+    let mut visited = HashSet::new();
     while next != 0 {
+        if !visited.insert(next) {
+            return Err(FileError::InvalidTableDef {
+                reason: "circular page reference in TDEF chain",
+            });
+        }
         let cont_page = reader.read_page_copy(next)?;
         if cont_page.len() > 8 {
             buf.extend_from_slice(&cont_page[8..]);

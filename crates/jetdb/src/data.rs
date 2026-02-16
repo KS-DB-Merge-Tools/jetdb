@@ -1,8 +1,13 @@
+use std::collections::HashSet;
+
 use crate::encoding;
 use crate::file::{find_row, FileError, PageReader};
 use crate::format::{row, ColumnType};
 use crate::money;
 use crate::table::{ColumnDef, TableDef};
+
+/// Maximum initial capacity for LVAL multi-page buffer (16 MB).
+const MAX_LVAL_INITIAL_CAP: usize = 16 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // Value enum
@@ -628,9 +633,13 @@ fn read_lval_data(
             return None;
         }
         let mut pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
-        let mut buf = Vec::with_capacity(data_len);
+        let mut buf = Vec::with_capacity(data_len.min(MAX_LVAL_INITIAL_CAP));
+        let mut visited = HashSet::new();
 
         while pg_row != 0 {
+            if !visited.insert(pg_row) {
+                break; // circular reference
+            }
             let row_data = reader.read_pg_row(pg_row).ok()?;
             if row_data.len() < 4 {
                 return None;
