@@ -3,6 +3,8 @@
 [![CI](https://github.com/dominion525/jetdb/actions/workflows/ci.yml/badge.svg)](https://github.com/dominion525/jetdb/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
 [![MSRV: 1.82](https://img.shields.io/badge/MSRV-1.82-orange)](https://blog.rust-lang.org/2024/10/17/Rust-1.82.0.html)
+[![Crates.io](https://img.shields.io/crates/v/jetdb)](https://crates.io/crates/jetdb)
+[![docs.rs](https://img.shields.io/docsrs/jetdb)](https://docs.rs/jetdb)
 
 [English](README.md)
 
@@ -86,7 +88,7 @@ fn main() -> Result<(), jetdb::FileError> {
 }
 ```
 
-詳しい API ドキュメントやコード例は `cargo doc --open` で確認できます。crates.io に公開後は [docs.rs/jetdb](https://docs.rs/jetdb) でも閲覧できます。
+詳しい API ドキュメントやコード例は `cargo doc --open` で確認できます。[docs.rs/jetdb](https://docs.rs/jetdb) でも閲覧できます。
 
 ## 対応バージョン
 
