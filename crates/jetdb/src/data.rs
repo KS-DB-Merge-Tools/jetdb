@@ -99,18 +99,22 @@ pub fn read_table_rows(reader: &mut PageReader, table: &TableDef) -> Result<Read
             if row_ptr & row::DELETE_FLAG != 0 {
                 continue;
             }
-            // Skip overflow/lookup rows (multi-page rows not yet supported)
-            if row_ptr & row::LOOKUP_FLAG != 0 {
-                log::debug!("skipping overflow row on page {page_num} row {row_idx}");
-                skipped_rows += 1;
-                continue;
-            }
+            // Lookup/overflow rows: the row was relocated to this page from
+            // another page, or this is a stale pointer to a row that was
+            // moved away. If find_row succeeds, the data at the offset is
+            // valid row data to be read normally. Stale entries where
+            // find_row fails are skipped (not counted as errors).
+            let is_lookup = row_ptr & row::LOOKUP_FLAG != 0;
 
             let (start, size) = match find_row(format, &page_data, page_num, row_idx) {
                 Ok(v) => v,
                 Err(e) => {
-                    log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
-                    skipped_rows += 1;
+                    if is_lookup {
+                        log::debug!("skipping stale lookup row on page {page_num} row {row_idx}: {e}");
+                    } else {
+                        log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
+                        skipped_rows += 1;
+                    }
                     continue;
                 }
             };
@@ -1894,5 +1898,46 @@ mod tests {
         let cracked = crack_row_jet4(&row_data).unwrap();
         let col = make_col_def(ColumnType::Text, 255);
         assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    // -- Overflow (LOOKUP_FLAG) rows ------------------------------------------
+
+    #[test]
+    fn overflow_row_msysaccessstorage() {
+        let path = skip_if_missing!("overflow_enc_vbaV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "MSysAccessStorage")
+            .expect("MSysAccessStorage entry in catalog");
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert_eq!(result.skipped_rows, 0, "no rows should be skipped");
+        assert!(
+            result.rows.len() >= 10,
+            "MSysAccessStorage should have at least 10 rows, got {}",
+            result.rows.len()
+        );
+
+        // Verify that a /VBA/dir-like entry exists (Name column should contain VBA paths)
+        let name_idx = table
+            .columns
+            .iter()
+            .position(|c| c.name == "Name")
+            .expect("Name column");
+        let names: Vec<&str> = result
+            .rows
+            .iter()
+            .filter_map(|row| match &row[name_idx] {
+                Value::Text(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            names.iter().any(|n| n.contains("dir")),
+            "Expected a VBA dir entry among: {names:?}"
+        );
     }
 }
