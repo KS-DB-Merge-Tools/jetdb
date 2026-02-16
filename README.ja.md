@@ -124,7 +124,7 @@ fn main() -> Result<(), jetdb::FileError> {
 
 ## 謝辞
 
-- MDB/ACCDB ファイルフォーマットの理解にあたって [mdbtools](https://github.com/mdbtools/mdbtools) の [HACKING.md](https://github.com/mdbtools/mdbtools/blob/main/HACKING.md) を大いに参考にしました
+- MDB/ACCDB ファイルフォーマットの理解にあたって [mdbtools](https://github.com/mdbtools/mdbtools) の [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) を大いに参考にしました
 - テスト用の .mdb / .accdb ファイルは大部分を [Jackcess](https://github.com/spannm/jackcess)（Apache License 2.0）から利用しています（一部は本プロジェクトで独自に作成）
 
 ## ライセンス

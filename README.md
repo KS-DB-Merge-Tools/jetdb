@@ -124,7 +124,7 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 
 ## Acknowledgments
 
-- [mdbtools](https://github.com/mdbtools/mdbtools) — [HACKING.md](https://github.com/mdbtools/mdbtools/blob/main/HACKING.md) was an invaluable reference for understanding the MDB/ACCDB file format
+- [mdbtools](https://github.com/mdbtools/mdbtools) — [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) was an invaluable reference for understanding the MDB/ACCDB file format
 - [Jackcess](https://github.com/spannm/jackcess) (Apache License 2.0) — most test .mdb/.accdb files are sourced from this project (some were created independently)
 
 ## License
