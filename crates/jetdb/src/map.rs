@@ -295,4 +295,73 @@ mod tests {
             "MSysObjects should have at least one data page (ACE14)"
         );
     }
+
+    // -- collect_page_numbers error paths ------------------------------------
+
+    #[test]
+    fn collect_page_numbers_empty() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let result = collect_page_numbers(&mut reader, &[]);
+        assert!(matches!(result, Err(FileError::InvalidUsageMap { .. })));
+    }
+
+    #[test]
+    fn collect_page_numbers_type2() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let result = collect_page_numbers(&mut reader, &[0x02]);
+        assert!(matches!(result, Err(FileError::InvalidUsageMap { .. })));
+        if let Err(FileError::InvalidUsageMap { reason }) = result {
+            assert_eq!(reason, "unsupported usage map type 2");
+        }
+    }
+
+    #[test]
+    fn collect_page_numbers_reference_unaligned() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        // Type 1 (reference) + 3 bytes (not a multiple of 4)
+        let result = collect_page_numbers(&mut reader, &[0x01, 0xAA, 0xBB, 0xCC]);
+        assert!(matches!(result, Err(FileError::InvalidUsageMap { .. })));
+        if let Err(FileError::InvalidUsageMap { reason }) = result {
+            assert_eq!(reason, "reference map pointer data not aligned to 4 bytes");
+        }
+    }
+
+    #[test]
+    fn collect_page_numbers_reference_zero_pointer_skipped() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        // Type 1 (reference) + one pointer = 0x00000000 (skipped)
+        let result = collect_page_numbers(&mut reader, &[0x01, 0x00, 0x00, 0x00, 0x00]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn collect_page_numbers_reference_bad_page_type() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        // Type 1 (reference) + pointer to page 1 (which is a data page, not a usage bitmap)
+        let result = collect_page_numbers(&mut reader, &[0x01, 0x01, 0x00, 0x00, 0x00]);
+        assert!(matches!(result, Err(FileError::InvalidUsageMap { .. })));
+        if let Err(FileError::InvalidUsageMap { reason }) = result {
+            assert_eq!(
+                reason,
+                "reference map pointer does not point to a usage bitmap page"
+            );
+        }
+    }
+
+    #[test]
+    fn collect_page_numbers_unknown_type() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let result = collect_page_numbers(&mut reader, &[0xFF]);
+        assert!(matches!(result, Err(FileError::InvalidUsageMap { .. })));
+        if let Err(FileError::InvalidUsageMap { reason }) = result {
+            assert_eq!(reason, "unknown usage map type");
+        }
+    }
 }

@@ -75,11 +75,36 @@ cargo install rust-code-analysis-cli --locked
 >
 > This project's last release was January 2023 and maintenance has stalled.
 
+### 6. cargo-llvm-cov — Test Coverage
+
+Measure test coverage using LLVM source-based code coverage.
+
+```bash
+cargo llvm-cov --workspace
+```
+
+HTML report:
+
+```bash
+cargo llvm-cov --workspace --html
+```
+
+The HTML report is output to `target/llvm-cov/html/index.html`.
+
+Installation:
+
+```bash
+cargo install cargo-llvm-cov
+```
+
+> **Note**: The `llvm-tools-preview` component is required. It will be installed automatically on first run.
+
 ## Recommended Execution Order
 
 1. `cargo test` — Verify existing tests pass first
-2. `cargo clippy -- -D warnings` — Check code quality
-3. `cargo audit` — Check for security issues
-4. `cargo doc --workspace` — Verify documentation builds correctly
+2. `cargo llvm-cov --workspace` — Measure test coverage
+3. `cargo clippy -- -D warnings` — Check code quality
+4. `cargo audit` — Check for security issues
+5. `cargo doc --workspace` — Verify documentation builds correctly
 
-Running other checks is pointless if tests don't pass, so `cargo test` comes first. `cargo clippy` detects code issues and should run early. `cargo audit` and `cargo doc` are independent and can run in any order.
+Running other checks is pointless if tests don't pass, so `cargo test` comes first. `cargo llvm-cov` measures coverage and should run right after tests. `cargo clippy` detects code issues and should run early. `cargo audit` and `cargo doc` are independent and can run in any order.

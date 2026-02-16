@@ -75,11 +75,36 @@ cargo install rust-code-analysis-cli --locked
 >
 > このプロジェクトは最終リリースが 2023年1月であり、メンテナンスが停滞している。
 
+### 6. cargo-llvm-cov — テストカバレッジ
+
+LLVM ソースベースのコードカバレッジを使用してテストカバレッジを計測する。
+
+```bash
+cargo llvm-cov --workspace
+```
+
+HTML レポート:
+
+```bash
+cargo llvm-cov --workspace --html
+```
+
+HTML レポートは `target/llvm-cov/html/index.html` に出力される。
+
+インストール:
+
+```bash
+cargo install cargo-llvm-cov
+```
+
+> **注意**: `llvm-tools-preview` コンポーネントが必要。初回実行時に自動でインストールされる。
+
 ## 推奨実行順序
 
 1. `cargo test` — まず既存テストが通ることを確認
-2. `cargo clippy -- -D warnings` — コード品質のチェック
-3. `cargo audit` — セキュリティ上の問題がないか確認
-4. `cargo doc --workspace` — ドキュメントが正しく生成されるか確認
+2. `cargo llvm-cov --workspace` — テストカバレッジを計測
+3. `cargo clippy -- -D warnings` — コード品質のチェック
+4. `cargo audit` — セキュリティ上の問題がないか確認
+5. `cargo doc --workspace` — ドキュメントが正しく生成されるか確認
 
-テストが通らない状態で他のチェックを行っても意味がないため、`cargo test` を最初に実行する。`cargo clippy` はコードの問題を検出するため早い段階で実行する。`cargo audit` と `cargo doc` は独立しているため順序は問わない。
+テストが通らない状態で他のチェックを行っても意味がないため、`cargo test` を最初に実行する。`cargo llvm-cov` はカバレッジ計測のためテストの直後に実行する。`cargo clippy` はコードの問題を検出するため早い段階で実行する。`cargo audit` と `cargo doc` は独立しているため順序は問わない。

@@ -1130,6 +1130,347 @@ mod tests {
         );
     }
 
+    // -- Access additional type mappings --------------------------------------
+
+    #[test]
+    fn access_map_byte() {
+        let d = access();
+        let c = col("x", ColumnType::Byte, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BYTE");
+    }
+
+    #[test]
+    fn access_map_int() {
+        let d = access();
+        let c = col("x", ColumnType::Int, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "SHORT");
+    }
+
+    #[test]
+    fn access_map_long() {
+        let d = access();
+        let c = col("x", ColumnType::Long, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "LONG");
+    }
+
+    #[test]
+    fn access_map_float() {
+        let d = access();
+        let c = col("x", ColumnType::Float, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "SINGLE");
+    }
+
+    #[test]
+    fn access_map_double() {
+        let d = access();
+        let c = col("x", ColumnType::Double, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DOUBLE");
+    }
+
+    #[test]
+    fn access_map_timestamp() {
+        let d = access();
+        let c = col("x", ColumnType::Timestamp, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DATETIME");
+    }
+
+    #[test]
+    fn access_map_binary() {
+        let d = access();
+        let c = col("x", ColumnType::Binary, 50, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BINARY(50)");
+    }
+
+    #[test]
+    fn access_map_ole() {
+        let d = access();
+        let c = col("x", ColumnType::Ole, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "OLEOBJECT");
+    }
+
+    #[test]
+    fn access_map_guid() {
+        let d = access();
+        let c = col("x", ColumnType::Guid, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "UNIQUEIDENTIFIER");
+    }
+
+    #[test]
+    fn access_map_numeric() {
+        let d = access();
+        let c = col("x", ColumnType::Numeric, 0, 0, 10, 2);
+        assert_eq!(d.map_column_type(&c, false), "DECIMAL(10,2)");
+    }
+
+    #[test]
+    fn access_map_complex_type() {
+        let d = access();
+        let c = col("x", ColumnType::ComplexType, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "LONG");
+    }
+
+    #[test]
+    fn access_map_bigint() {
+        let d = access();
+        let c = col("x", ColumnType::BigInt, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "LONG");
+    }
+
+    #[test]
+    fn access_map_unknown() {
+        let d = access();
+        let c = col("x", ColumnType::Unknown(0xFF), 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BINARY");
+    }
+
+    // -- MySQL additional type mappings ---------------------------------------
+
+    #[test]
+    fn mysql_map_int() {
+        let d = mysql();
+        let c = col("x", ColumnType::Int, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "SMALLINT");
+    }
+
+    #[test]
+    fn mysql_map_long() {
+        let d = mysql();
+        let c = col("x", ColumnType::Long, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INT");
+    }
+
+    #[test]
+    fn mysql_map_money() {
+        let d = mysql();
+        let c = col("x", ColumnType::Money, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DECIMAL(19,4)");
+    }
+
+    #[test]
+    fn mysql_map_float() {
+        let d = mysql();
+        let c = col("x", ColumnType::Float, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "FLOAT");
+    }
+
+    #[test]
+    fn mysql_map_double() {
+        let d = mysql();
+        let c = col("x", ColumnType::Double, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DOUBLE");
+    }
+
+    #[test]
+    fn mysql_map_timestamp() {
+        let d = mysql();
+        let c = col("x", ColumnType::Timestamp, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DATETIME");
+    }
+
+    #[test]
+    fn mysql_map_binary() {
+        let d = mysql();
+        let c = col("x", ColumnType::Binary, 50, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "VARBINARY(50)");
+    }
+
+    #[test]
+    fn mysql_map_memo() {
+        let d = mysql();
+        let c = col("x", ColumnType::Memo, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "LONGTEXT");
+    }
+
+    #[test]
+    fn mysql_map_numeric() {
+        let d = mysql();
+        let c = col("x", ColumnType::Numeric, 0, 0, 10, 2);
+        assert_eq!(d.map_column_type(&c, false), "DECIMAL(10,2)");
+    }
+
+    #[test]
+    fn mysql_map_complex_type() {
+        let d = mysql();
+        let c = col("x", ColumnType::ComplexType, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INT");
+    }
+
+    #[test]
+    fn mysql_map_bigint() {
+        let d = mysql();
+        let c = col("x", ColumnType::BigInt, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BIGINT");
+    }
+
+    #[test]
+    fn mysql_map_unknown() {
+        let d = mysql();
+        let c = col("x", ColumnType::Unknown(0xFF), 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "LONGBLOB");
+    }
+
+    // -- PostgreSQL additional type mappings -----------------------------------
+
+    #[test]
+    fn postgres_map_byte() {
+        let d = postgres();
+        let c = col("x", ColumnType::Byte, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "SMALLINT");
+    }
+
+    #[test]
+    fn postgres_map_int() {
+        let d = postgres();
+        let c = col("x", ColumnType::Int, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "SMALLINT");
+    }
+
+    #[test]
+    fn postgres_map_long() {
+        let d = postgres();
+        let c = col("x", ColumnType::Long, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn postgres_map_float() {
+        let d = postgres();
+        let c = col("x", ColumnType::Float, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "REAL");
+    }
+
+    #[test]
+    fn postgres_map_double() {
+        let d = postgres();
+        let c = col("x", ColumnType::Double, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DOUBLE PRECISION");
+    }
+
+    #[test]
+    fn postgres_map_binary() {
+        let d = postgres();
+        let c = col("x", ColumnType::Binary, 50, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BYTEA");
+    }
+
+    #[test]
+    fn postgres_map_memo() {
+        let d = postgres();
+        let c = col("x", ColumnType::Memo, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "TEXT");
+    }
+
+    #[test]
+    fn postgres_map_numeric() {
+        let d = postgres();
+        let c = col("x", ColumnType::Numeric, 0, 0, 10, 2);
+        assert_eq!(d.map_column_type(&c, false), "NUMERIC(10,2)");
+    }
+
+    #[test]
+    fn postgres_map_complex_type() {
+        let d = postgres();
+        let c = col("x", ColumnType::ComplexType, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn postgres_map_bigint() {
+        let d = postgres();
+        let c = col("x", ColumnType::BigInt, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BIGINT");
+    }
+
+    #[test]
+    fn postgres_map_unknown() {
+        let d = postgres();
+        let c = col("x", ColumnType::Unknown(0xFF), 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BYTEA");
+    }
+
+    // -- SQLite additional type mappings --------------------------------------
+
+    #[test]
+    fn sqlite_map_boolean() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Boolean, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn sqlite_map_byte() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Byte, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn sqlite_map_int() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Int, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn sqlite_map_float() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Float, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "REAL");
+    }
+
+    #[test]
+    fn sqlite_map_double() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Double, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "REAL");
+    }
+
+    #[test]
+    fn sqlite_map_memo() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Memo, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "TEXT");
+    }
+
+    #[test]
+    fn sqlite_map_ole() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Ole, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BLOB");
+    }
+
+    #[test]
+    fn sqlite_map_numeric() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Numeric, 0, 0, 10, 2);
+        assert_eq!(d.map_column_type(&c, false), "NUMERIC");
+    }
+
+    #[test]
+    fn sqlite_map_complex_type() {
+        let d = sqlite();
+        let c = col("x", ColumnType::ComplexType, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn sqlite_map_bigint() {
+        let d = sqlite();
+        let c = col("x", ColumnType::BigInt, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "INTEGER");
+    }
+
+    #[test]
+    fn sqlite_map_unknown() {
+        let d = sqlite();
+        let c = col("x", ColumnType::Unknown(0xFF), 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "BLOB");
+    }
+
+    // ========================================================================
+    // Composite PK / FK tests (continued)
+    // ========================================================================
+
     #[test]
     fn foreign_key_multi_column() {
         let d = postgres();
