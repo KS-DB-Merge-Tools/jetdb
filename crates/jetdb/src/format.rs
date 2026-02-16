@@ -786,4 +786,75 @@ mod tests {
         let e = FormatError::InvalidEncoding;
         assert_eq!(e.to_string(), "invalid text encoding");
     }
+
+    // -- Display trait tests --------------------------------------------------
+
+    #[test]
+    fn jet_version_display() {
+        assert_eq!(JetVersion::Jet3.to_string(), "Jet3 (Access 97)");
+        assert_eq!(JetVersion::Jet4.to_string(), "Jet4 (Access 2000/2003)");
+        assert_eq!(JetVersion::Ace12.to_string(), "ACE12 (Access 2007)");
+        assert_eq!(JetVersion::Ace14.to_string(), "ACE14 (Access 2010)");
+        assert_eq!(JetVersion::Ace15.to_string(), "ACE15 (Access 2013)");
+        assert_eq!(JetVersion::Ace16.to_string(), "ACE16 (Access 2016)");
+        assert_eq!(JetVersion::Ace17.to_string(), "ACE17 (Access 2019)");
+    }
+
+    #[test]
+    fn page_type_display() {
+        assert_eq!(PageType::DatabaseDefinition.to_string(), "Database Definition");
+        assert_eq!(PageType::Data.to_string(), "Data");
+        assert_eq!(PageType::TableDefinition.to_string(), "Table Definition");
+        assert_eq!(PageType::IntermediateIndex.to_string(), "Intermediate Index");
+        assert_eq!(PageType::LeafIndex.to_string(), "Leaf Index");
+        assert_eq!(PageType::PageUsageBitmap.to_string(), "Page Usage Bitmap");
+    }
+
+    #[test]
+    fn object_type_display() {
+        assert_eq!(ObjectType::Form.to_string(), "Form");
+        assert_eq!(ObjectType::Table.to_string(), "Table");
+        assert_eq!(ObjectType::Macro.to_string(), "Macro");
+        assert_eq!(ObjectType::SystemTable.to_string(), "SystemTable");
+        assert_eq!(ObjectType::Report.to_string(), "Report");
+        assert_eq!(ObjectType::Query.to_string(), "Query");
+        assert_eq!(ObjectType::LinkedTable.to_string(), "LinkedTable");
+        assert_eq!(ObjectType::Module.to_string(), "Module");
+        assert_eq!(ObjectType::Relationship.to_string(), "Relationship");
+        assert_eq!(ObjectType::DatabaseProperty.to_string(), "DatabaseProperty");
+    }
+
+    #[test]
+    fn column_type_display_known() {
+        assert_eq!(ColumnType::Boolean.to_string(), "Boolean");
+        assert_eq!(ColumnType::Byte.to_string(), "Byte");
+        assert_eq!(ColumnType::Int.to_string(), "Int");
+        assert_eq!(ColumnType::Long.to_string(), "Long");
+        assert_eq!(ColumnType::Money.to_string(), "Money");
+        assert_eq!(ColumnType::Float.to_string(), "Float");
+        assert_eq!(ColumnType::Double.to_string(), "Double");
+        assert_eq!(ColumnType::Timestamp.to_string(), "Timestamp");
+        assert_eq!(ColumnType::Binary.to_string(), "Binary");
+        assert_eq!(ColumnType::Text.to_string(), "Text");
+        assert_eq!(ColumnType::Ole.to_string(), "Ole");
+        assert_eq!(ColumnType::Memo.to_string(), "Memo");
+        assert_eq!(ColumnType::Guid.to_string(), "Guid");
+        assert_eq!(ColumnType::Numeric.to_string(), "Numeric");
+        assert_eq!(ColumnType::ComplexType.to_string(), "ComplexType");
+        assert_eq!(ColumnType::BigInt.to_string(), "BigInt");
+    }
+
+    #[test]
+    fn format_error_is_std_error() {
+        let e: Box<dyn std::error::Error> = Box::new(FormatError::InvalidEncoding);
+        assert!(e.source().is_none());
+    }
+
+    #[test]
+    fn object_type_unknown() {
+        assert_eq!(
+            ObjectType::try_from(99),
+            Err(FormatError::UnknownObjectType(99))
+        );
+    }
 }

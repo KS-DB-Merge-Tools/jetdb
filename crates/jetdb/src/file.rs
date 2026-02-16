@@ -394,6 +394,7 @@ impl fmt::Debug for PageReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format::JET4;
 
     // -- RC4 unit tests -------------------------------------------------------
 
@@ -625,5 +626,176 @@ mod tests {
         let debug = format!("{reader:?}");
         assert!(debug.contains("PageReader"));
         assert!(debug.contains("page_size"));
+    }
+
+    // -- find_row error paths -------------------------------------------------
+
+    #[test]
+    fn find_row_page_too_small() {
+        let page_data = [0u8; 10]; // too small for JET4 row_count_pos (12)
+        let result = find_row(&JET4, &page_data, 1, 0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, FileError::InvalidRow { reason: "page too small for row count", .. })
+        );
+    }
+
+    #[test]
+    fn find_row_row_exceeds_count() {
+        // JET4: row_count at offset 12. num_rows=1, request row=5
+        let mut page_data = vec![0u8; 4096];
+        page_data[12] = 1; // num_rows = 1
+        page_data[13] = 0;
+        let result = find_row(&JET4, &page_data, 1, 5);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, FileError::InvalidRow { reason: "row index exceeds row count", .. })
+        );
+    }
+
+    #[test]
+    fn find_row_invalid_offsets() {
+        // JET4: row_count at offset 12. num_rows=1, row=0
+        // Row 0: end = page_size=4096, start must be < end
+        // Set row offset to something >= 4096 (but within 13-bit mask)
+        let mut page_data = vec![0u8; 4096];
+        page_data[12] = 1; // num_rows = 1
+        page_data[13] = 0;
+        // offset table at 14: row 0 entry
+        // Set start offset very high (but masked to 13 bits): 0x1FFF = 8191 → 8191 & 0x1FFF = 8191 > 4096
+        page_data[14] = 0xFF;
+        page_data[15] = 0x1F;
+        let result = find_row(&JET4, &page_data, 1, 0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn find_row_valid() {
+        // Set up a valid single-row page for JET4
+        let mut page_data = vec![0u8; 4096];
+        page_data[12] = 1; // num_rows = 1
+        page_data[13] = 0;
+        // Row 0: offset table at 14. start=100 (stored as u16 LE)
+        page_data[14] = 100;
+        page_data[15] = 0;
+        let result = find_row(&JET4, &page_data, 1, 0);
+        assert!(result.is_ok());
+        let (start, size) = result.unwrap();
+        assert_eq!(start, 100);
+        assert_eq!(size, 4096 - 100);
+    }
+
+    // -- FileError::Display remaining variants --------------------------------
+
+    #[test]
+    fn file_error_display_all_variants() {
+        let e = FileError::InvalidUsageMap { reason: "test" };
+        assert!(e.to_string().contains("test"));
+        assert!(e.to_string().contains("invalid usage map"));
+
+        let e = FileError::InvalidTableDef { reason: "bad tdef" };
+        assert!(e.to_string().contains("bad tdef"));
+        assert!(e.to_string().contains("invalid table definition"));
+
+        let e = FileError::InvalidProperty { reason: "bad prop" };
+        assert!(e.to_string().contains("bad prop"));
+        assert!(e.to_string().contains("invalid property"));
+
+        let e = FileError::TableNotFound { name: "T1".into() };
+        assert!(e.to_string().contains("T1"));
+        assert!(e.to_string().contains("table not found"));
+
+        let e = FileError::QueryNotFound { name: "Q1".into() };
+        assert!(e.to_string().contains("Q1"));
+        assert!(e.to_string().contains("query not found"));
+
+        let e = FileError::ModuleNotFound { name: "M1".into() };
+        assert!(e.to_string().contains("M1"));
+        assert!(e.to_string().contains("VBA module not found"));
+
+        let e = FileError::InvalidVbaProject { reason: "corrupt".into() };
+        assert!(e.to_string().contains("corrupt"));
+        assert!(e.to_string().contains("invalid VBA project"));
+
+        let e = FileError::InvalidRow { page: 5, row: 3, reason: "oops" };
+        assert!(e.to_string().contains("oops"));
+        assert!(e.to_string().contains("invalid row"));
+    }
+
+    // -- Error::source() ------------------------------------------------------
+
+    #[test]
+    fn file_error_source() {
+        use std::error::Error;
+
+        let e = FileError::TableNotFound { name: "T".into() };
+        assert!(e.source().is_none());
+
+        let e = FileError::QueryNotFound { name: "Q".into() };
+        assert!(e.source().is_none());
+
+        let e = FileError::ModuleNotFound { name: "M".into() };
+        assert!(e.source().is_none());
+
+        let e = FileError::InvalidVbaProject { reason: "r".into() };
+        assert!(e.source().is_none());
+
+        let e = FileError::InvalidUsageMap { reason: "r" };
+        assert!(e.source().is_none());
+
+        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "io");
+        let e = FileError::Io(io_err);
+        assert!(e.source().is_some());
+
+        let fmt_err = FormatError::InvalidEncoding;
+        let e = FileError::Format(fmt_err);
+        assert!(e.source().is_some());
+    }
+
+    // -- PageReader::open error paths -----------------------------------------
+
+    #[test]
+    fn open_empty_file() {
+        let dir = std::env::temp_dir().join("jetdb_test_empty.mdb");
+        std::fs::write(&dir, b"").unwrap();
+        let err = PageReader::open(&dir).unwrap_err();
+        assert!(matches!(err, FileError::FileTooSmall { .. }));
+        std::fs::remove_file(&dir).ok();
+    }
+
+    #[test]
+    fn open_too_small_file() {
+        // File has valid version byte at 0x14 but is smaller than page size
+        let mut data = vec![0u8; 0x15 + 1]; // just enough for version byte
+        data[0x14] = 0x01; // Jet4 version
+        let dir = std::env::temp_dir().join("jetdb_test_small.mdb");
+        std::fs::write(&dir, &data).unwrap();
+        let err = PageReader::open(&dir).unwrap_err();
+        assert!(matches!(err, FileError::FileTooSmall { .. }));
+        std::fs::remove_file(&dir).ok();
+    }
+
+    // -- decrypt_page symmetry test -------------------------------------------
+
+    #[test]
+    fn decrypt_page_roundtrip() {
+        let db_key: u32 = 0x12345678;
+        let page: u32 = 42;
+        let original = vec![0xAA; 128];
+        let mut buf = original.clone();
+        decrypt_page(&mut buf, db_key, page);
+        assert_ne!(buf, original); // encrypted != original
+        decrypt_page(&mut buf, db_key, page); // RC4 is symmetric
+        assert_eq!(buf, original);
+    }
+
+    #[test]
+    fn decrypt_page_zero_key_noop() {
+        let original = vec![0xBB; 64];
+        let mut buf = original.clone();
+        decrypt_page(&mut buf, 0, 1);
+        assert_eq!(buf, original); // no change when db_key == 0
     }
 }

@@ -789,4 +789,175 @@ mod tests {
             read_object_properties(&mut reader, "NoSuchObject_XYZ_12345").unwrap();
         assert!(props.maps.is_empty());
     }
+
+    // -- decode_prop_value additional types ------------------------------------
+
+    #[test]
+    fn decode_prop_value_money() {
+        let raw = 10_000i64.to_le_bytes();
+        let val = decode_prop_value(0x05, &raw, "test", false);
+        assert_eq!(val, Value::Money("1.0000".to_string()));
+    }
+
+    #[test]
+    fn decode_prop_value_money_short() {
+        let val = decode_prop_value(0x05, &[0x01, 0x02, 0x03], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_float() {
+        let raw = 1.5f32.to_le_bytes();
+        let val = decode_prop_value(0x06, &raw, "test", false);
+        assert!(matches!(val, Value::Float(v) if (v - 1.5).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn decode_prop_value_float_short() {
+        let val = decode_prop_value(0x06, &[0x01, 0x02], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_double() {
+        let raw = 3.14f64.to_le_bytes();
+        let val = decode_prop_value(0x07, &raw, "test", false);
+        assert!(matches!(val, Value::Double(v) if (v - 3.14).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn decode_prop_value_double_short() {
+        let val = decode_prop_value(0x07, &[0x01, 0x02, 0x03, 0x04], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_timestamp() {
+        let raw = 37623.0f64.to_le_bytes();
+        let val = decode_prop_value(0x08, &raw, "test", false);
+        assert!(matches!(val, Value::Timestamp(v) if (v - 37623.0).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn decode_prop_value_timestamp_short() {
+        let val = decode_prop_value(0x08, &[0x01], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_ole_binary() {
+        let raw = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let val = decode_prop_value(0x0B, &raw, "test", false);
+        assert_eq!(val, Value::Binary(raw));
+    }
+
+    #[test]
+    fn decode_prop_value_guid_16bytes() {
+        let guid_bytes: [u8; 16] = [
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+        ];
+        let val = decode_prop_value(0x0F, &guid_bytes, "test", false);
+        assert_eq!(
+            val,
+            Value::Guid("{04030201-0605-0807-090A-0B0C0D0E0F10}".to_string())
+        );
+    }
+
+    #[test]
+    fn decode_prop_value_guid_non16bytes() {
+        let raw = vec![0x01, 0x02, 0x03];
+        let val = decode_prop_value(0x0F, &raw, "test", false);
+        assert_eq!(val, Value::Binary(raw));
+    }
+
+    #[test]
+    fn decode_prop_value_byte_empty() {
+        let val = decode_prop_value(0x02, &[], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_byte_valid() {
+        let val = decode_prop_value(0x02, &[42], "test", false);
+        assert_eq!(val, Value::Byte(42));
+    }
+
+    #[test]
+    fn decode_prop_value_int_short() {
+        let val = decode_prop_value(0x03, &[0x01], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_long_short() {
+        let val = decode_prop_value(0x04, &[0x01, 0x02], "test", false);
+        assert_eq!(val, Value::Null);
+    }
+
+    #[test]
+    fn decode_prop_value_unknown_type() {
+        let raw = vec![0xFF, 0xFE];
+        let val = decode_prop_value(0xFF, &raw, "test", false);
+        assert_eq!(val, Value::Binary(raw));
+    }
+
+    #[test]
+    fn decode_prop_value_bool_empty() {
+        let val = decode_prop_value(0x01, &[], "test", false);
+        assert_eq!(val, Value::Bool(false));
+    }
+
+    #[test]
+    fn decode_prop_value_memo_jet3() {
+        let raw = b"Hello Jet3";
+        let val = decode_prop_value(0x0C, raw, "test", true);
+        assert_eq!(val, Value::Text("Hello Jet3".to_string()));
+    }
+
+    #[test]
+    fn decode_prop_value_text_invalid_utf16() {
+        // Odd number of bytes cannot be valid UTF-16LE
+        let raw = vec![0x41, 0x00, 0x42];
+        let val = decode_prop_value(0x0A, &raw, "test", false);
+        assert_eq!(val, Value::Binary(raw));
+    }
+
+    #[test]
+    fn decode_prop_value_memo_invalid_utf16() {
+        let raw = vec![0xFF];
+        let val = decode_prop_value(0x0C, &raw, "test", false);
+        assert_eq!(val, Value::Binary(raw));
+    }
+
+    // -- parse_value_chunk additional type -------------------------------------
+
+    #[test]
+    fn parse_value_chunk_type_additional() {
+        let names = vec!["Prop1".to_string()];
+        let mut chunk = Vec::new();
+        chunk.extend_from_slice(&4u32.to_le_bytes()); // name_block_len = 4
+
+        // Property entry: Long "Prop1" = 99
+        let raw = 99i32.to_le_bytes();
+        let val_len: u16 = 8 + raw.len() as u16;
+        chunk.extend_from_slice(&val_len.to_le_bytes());
+        chunk.push(0x00); // ddl_flag
+        chunk.push(0x04); // data_type = Long
+        chunk.extend_from_slice(&0u16.to_le_bytes());
+        chunk.extend_from_slice(&(raw.len() as u16).to_le_bytes());
+        chunk.extend_from_slice(&raw);
+
+        let map = parse_value_chunk(&chunk, 0x0002, &names, false).unwrap();
+        assert_eq!(map.map_type, PropMapType::Additional);
+        assert_eq!(map.properties[0].value, Value::Long(99));
+    }
+
+    #[test]
+    fn parse_value_chunk_too_short() {
+        let names: Vec<String> = vec![];
+        let chunk = vec![0x01, 0x02]; // chunk_data < 4 bytes
+        let map = parse_value_chunk(&chunk, 0x0000, &names, false).unwrap();
+        assert!(map.properties.is_empty());
+    }
 }

@@ -1492,4 +1492,576 @@ mod tests {
         assert_eq!(ci.name1, None);
         assert_eq!(ci.expression, None);
     }
+
+    #[test]
+    fn resolve_unknown_column_ignored() {
+        let columns = vec![
+            make_col("ObjectId"),
+            make_col("Attribute"),
+            make_col("UnknownCol"),
+        ];
+        let ci = resolve_query_columns(&columns).unwrap();
+        assert_eq!(ci.object_id, 0);
+        assert_eq!(ci.attribute, 1);
+        assert_eq!(ci.order, None);
+    }
+
+    // -- param_type_name all flag values -------------------------------------
+
+    #[test]
+    fn param_type_name_all_flags() {
+        assert_eq!(param_type_name(0), Some("Value"));
+        assert_eq!(param_type_name(1), Some("Bit"));
+        assert_eq!(param_type_name(2), Some("Byte"));
+        assert_eq!(param_type_name(3), Some("Short"));
+        assert_eq!(param_type_name(4), Some("Long"));
+        assert_eq!(param_type_name(5), Some("Currency"));
+        assert_eq!(param_type_name(6), Some("IEEESingle"));
+        assert_eq!(param_type_name(7), Some("IEEEDouble"));
+        assert_eq!(param_type_name(8), Some("DateTime"));
+        assert_eq!(param_type_name(9), Some("Binary"));
+        assert_eq!(param_type_name(10), Some("Text"));
+        assert_eq!(param_type_name(11), Some("LongBinary"));
+        assert_eq!(param_type_name(15), Some("Guid"));
+        assert_eq!(param_type_name(-1), None);
+        assert_eq!(param_type_name(99), None);
+        assert_eq!(param_type_name(12), None);
+        assert_eq!(param_type_name(13), None);
+        assert_eq!(param_type_name(14), None);
+    }
+
+    // -- clean_union_string --------------------------------------------------
+
+    #[test]
+    fn clean_union_string_basic() {
+        let result = clean_union_string("  SELECT * FROM T1  ");
+        assert_eq!(result, "SELECT * FROM T1");
+    }
+
+    #[test]
+    fn clean_union_string_collapses_newlines() {
+        let input = "SELECT *\n\n\nFROM T1\r\n\r\nWHERE 1=1";
+        let result = clean_union_string(input);
+        assert_eq!(result, "SELECT *\nFROM T1\nWHERE 1=1");
+    }
+
+    #[test]
+    fn clean_union_string_cr_only() {
+        let result = clean_union_string("A\r\r\rB");
+        assert_eq!(result, "A\nB");
+    }
+
+    // -- get_byte / get_binary fallback paths ---------------------------------
+
+    #[test]
+    fn get_byte_wrong_type() {
+        let row = vec![Value::Long(42)];
+        assert_eq!(get_byte(&row, 0), None);
+    }
+
+    #[test]
+    fn get_binary_wrong_type() {
+        let row = vec![Value::Long(42)];
+        assert_eq!(get_binary(&row, 0), None);
+    }
+
+    #[test]
+    fn get_text_empty_string() {
+        let row = vec![Value::Text(String::new())];
+        assert_eq!(get_text(&row, 0), None);
+    }
+
+    #[test]
+    fn get_int_wrong_type() {
+        let row = vec![Value::Long(42)];
+        assert_eq!(get_int(&row, 0), None);
+    }
+
+    #[test]
+    fn get_long_wrong_type() {
+        let row = vec![Value::Text("hello".into())];
+        assert_eq!(get_long(&row, 0), None);
+    }
+
+    // -- get_select_type tests ------------------------------------------------
+
+    #[test]
+    fn get_select_type_distinct_row() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_FLAG,
+            expression: None,
+            name1: None,
+            name2: None,
+            flag: Some(DISTINCT_ROW),
+            extra: None,
+        }];
+        assert_eq!(get_select_type(&rows), "DISTINCTROW");
+    }
+
+    #[test]
+    fn get_select_type_top() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_FLAG,
+            expression: None,
+            name1: Some("10".to_string()),
+            name2: None,
+            flag: Some(TOP),
+            extra: None,
+        }];
+        assert_eq!(get_select_type(&rows), "TOP 10");
+    }
+
+    #[test]
+    fn get_select_type_top_percent() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_FLAG,
+            expression: None,
+            name1: Some("25".to_string()),
+            name2: None,
+            flag: Some(TOP | PERCENT),
+            extra: None,
+        }];
+        assert_eq!(get_select_type(&rows), "TOP 25 PERCENT");
+    }
+
+    #[test]
+    fn get_select_type_none() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_FLAG,
+            expression: None,
+            name1: None,
+            name2: None,
+            flag: Some(0),
+            extra: None,
+        }];
+        assert_eq!(get_select_type(&rows), "");
+    }
+
+    // -- format_parameters tests ----------------------------------------------
+
+    #[test]
+    fn format_parameters_text_with_size() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_PARAMETER,
+            expression: None,
+            name1: Some("Param1".to_string()),
+            name2: None,
+            flag: Some(10), // Text
+            extra: Some(255),
+        }];
+        let result = format_parameters(&rows);
+        assert_eq!(result, "Param1 Text(255)");
+    }
+
+    #[test]
+    fn format_parameters_text_no_size() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_PARAMETER,
+            expression: None,
+            name1: Some("Param1".to_string()),
+            name2: None,
+            flag: Some(10), // Text
+            extra: Some(0), // zero size → not appended
+        }];
+        let result = format_parameters(&rows);
+        assert_eq!(result, "Param1 Text");
+    }
+
+    #[test]
+    fn format_parameters_multiple() {
+        let rows = vec![
+            QueryRow {
+                attribute: ATTR_PARAMETER,
+                expression: None,
+                name1: Some("P1".to_string()),
+                name2: None,
+                flag: Some(4), // Long
+                extra: None,
+            },
+            QueryRow {
+                attribute: ATTR_PARAMETER,
+                expression: None,
+                name1: Some("P2".to_string()),
+                name2: None,
+                flag: Some(8), // DateTime
+                extra: None,
+            },
+        ];
+        let result = format_parameters(&rows);
+        assert_eq!(result, "P1 Long, P2 DateTime");
+    }
+
+    // -- get_orderings DESC test -----------------------------------------------
+
+    #[test]
+    fn get_orderings_desc() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_ORDERBY,
+            expression: Some("Table1.col1".to_string()),
+            name1: Some("D".to_string()),
+            name2: None,
+            flag: None,
+            extra: None,
+        }];
+        assert_eq!(get_orderings(&rows), "Table1.col1 DESC");
+    }
+
+    #[test]
+    fn get_orderings_asc() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_ORDERBY,
+            expression: Some("Table1.col1".to_string()),
+            name1: None,
+            name2: None,
+            flag: None,
+            extra: None,
+        }];
+        assert_eq!(get_orderings(&rows), "Table1.col1");
+    }
+
+    // -- same_join tests -------------------------------------------------------
+
+    #[test]
+    fn same_join_matching_type() {
+        let mut ts = TableSource::Join {
+            from: Box::new(TableSource::Simple {
+                name: "T1".to_string(),
+                expr: "T1".to_string(),
+            }),
+            to: Box::new(TableSource::Simple {
+                name: "T2".to_string(),
+                expr: "T2".to_string(),
+            }),
+            join_type: 1,
+            on_conditions: vec!["T1.a = T2.a".to_string()],
+        };
+        assert!(ts.same_join(1, "T1.b = T2.b"));
+        // New condition should be inserted at front
+        if let TableSource::Join { on_conditions, .. } = &ts {
+            assert_eq!(on_conditions[0], "T1.b = T2.b");
+            assert_eq!(on_conditions[1], "T1.a = T2.a");
+        }
+    }
+
+    #[test]
+    fn same_join_different_type() {
+        let mut ts = TableSource::Join {
+            from: Box::new(TableSource::Simple {
+                name: "T1".to_string(),
+                expr: "T1".to_string(),
+            }),
+            to: Box::new(TableSource::Simple {
+                name: "T2".to_string(),
+                expr: "T2".to_string(),
+            }),
+            join_type: 1,
+            on_conditions: vec!["T1.a = T2.a".to_string()],
+        };
+        assert!(!ts.same_join(2, "T1.b = T2.b")); // different join type
+    }
+
+    #[test]
+    fn same_join_on_simple() {
+        let mut ts = TableSource::Simple {
+            name: "T1".to_string(),
+            expr: "T1".to_string(),
+        };
+        assert!(!ts.same_join(1, "T1.a = T2.a")); // Simple → always false
+    }
+
+    // -- unknown JOIN type ---------------------------------------------------
+
+    #[test]
+    fn join_unknown_type() {
+        let ts = TableSource::Join {
+            from: Box::new(TableSource::Simple {
+                name: "T1".to_string(),
+                expr: "T1".to_string(),
+            }),
+            to: Box::new(TableSource::Simple {
+                name: "T2".to_string(),
+                expr: "T2".to_string(),
+            }),
+            join_type: 99,
+            on_conditions: vec!["T1.id = T2.id".to_string()],
+        };
+        assert_eq!(ts.to_sql(true), "T1 JOIN T2 ON T1.id = T2.id");
+    }
+
+    // -- sql_append VALUES branch ---------------------------------------------
+
+    #[test]
+    fn sql_append_values() {
+        let rows = vec![
+            QueryRow {
+                attribute: ATTR_TYPE,
+                expression: None,
+                name1: Some("TargetTable".to_string()),
+                name2: None,
+                flag: Some(3), // Append
+                extra: None,
+            },
+            QueryRow {
+                attribute: ATTR_COLUMN,
+                expression: Some("42".to_string()),
+                name1: None,
+                name2: Some("col1".to_string()),
+                flag: Some(APPEND_VALUE_FLAG),
+                extra: None,
+            },
+            QueryRow {
+                attribute: ATTR_COLUMN,
+                expression: Some("'hello'".to_string()),
+                name1: None,
+                name2: Some("col2".to_string()),
+                flag: Some(APPEND_VALUE_FLAG),
+                extra: None,
+            },
+        ];
+        let mut builder = String::new();
+        sql_append(&mut builder, &rows);
+        assert!(builder.contains("INSERT INTO TargetTable"));
+        assert!(builder.contains("(col1, col2)"));
+        assert!(builder.contains("VALUES (42, 'hello')"));
+    }
+
+    // -- query_to_sql OWNER_ACCESS -------------------------------------------
+
+    #[test]
+    fn query_to_sql_owner_access() {
+        let qdef = QueryDef {
+            name: "TestQuery".to_string(),
+            query_type: QueryType::Select,
+            rows: vec![
+                QueryRow {
+                    attribute: ATTR_TYPE,
+                    expression: None,
+                    name1: None,
+                    name2: None,
+                    flag: Some(1),
+                    extra: None,
+                },
+                QueryRow {
+                    attribute: ATTR_FLAG,
+                    expression: None,
+                    name1: None,
+                    name2: None,
+                    flag: Some(SELECT_STAR | OWNER_ACCESS),
+                    extra: None,
+                },
+                QueryRow {
+                    attribute: ATTR_TABLE,
+                    expression: None,
+                    name1: Some("Table1".to_string()),
+                    name2: None,
+                    flag: None,
+                    extra: None,
+                },
+            ],
+        };
+        let sql = query_to_sql(&qdef);
+        assert!(
+            sql.contains("WITH OWNERACCESS OPTION"),
+            "should contain OWNER_ACCESS: {sql}"
+        );
+        assert!(sql.contains("*"), "should contain SELECT *: {sql}");
+    }
+
+    // -- sql_union integration test ------------------------------------------
+
+    #[test]
+    fn sql_union_query() {
+        let path = skip_if_missing!("V2003/queryTestV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let queries = read_queries(&mut reader).unwrap();
+        let q = find_query(&queries, "UnionQuery");
+        let sql = query_to_sql(q);
+        assert!(
+            sql.contains("UNION"),
+            "should contain UNION: {sql}"
+        );
+    }
+
+    // -- sql_passthrough integration test ------------------------------------
+
+    #[test]
+    fn sql_passthrough_query() {
+        let path = skip_if_missing!("V2003/queryTestV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let queries = read_queries(&mut reader).unwrap();
+        let q = find_query(&queries, "PassthroughQuery");
+        let sql = query_to_sql(q);
+        // Passthrough queries don't have semicolons added by query_to_sql
+        assert!(!sql.is_empty(), "passthrough query should produce SQL");
+    }
+
+    // -- sql_ddl integration test --------------------------------------------
+
+    #[test]
+    fn sql_ddl_query() {
+        let path = skip_if_missing!("V2003/queryTestV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let queries = read_queries(&mut reader).unwrap();
+        let q = find_query(&queries, "DataDefinitionQuery");
+        let sql = query_to_sql(q);
+        assert!(!sql.is_empty(), "DDL query should produce SQL");
+    }
+
+    // -- build_from_tables with external DB ref and alias ----------------------
+
+    #[test]
+    fn build_from_tables_with_alias() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_TABLE,
+            expression: None,
+            name1: Some("Table1".to_string()),
+            name2: Some("T1".to_string()),
+            flag: None,
+            extra: None,
+        }];
+        let result = build_from_tables(&rows);
+        assert_eq!(result, vec!["Table1 AS T1"]);
+    }
+
+    #[test]
+    fn build_from_tables_with_external_db() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_TABLE,
+            expression: Some("C:\\path\\to\\db.mdb".to_string()),
+            name1: Some("Table1".to_string()),
+            name2: None,
+            flag: None,
+            extra: None,
+        }];
+        let result = build_from_tables(&rows);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("[C:\\path\\to\\db.mdb]"));
+        assert!(result[0].contains("Table1"));
+    }
+
+    #[test]
+    fn build_from_tables_join_missing_name() {
+        // JOIN row with missing name1/name2 should be skipped
+        let rows = vec![
+            QueryRow {
+                attribute: ATTR_TABLE,
+                expression: None,
+                name1: Some("T1".to_string()),
+                name2: None,
+                flag: None,
+                extra: None,
+            },
+            QueryRow {
+                attribute: ATTR_JOIN,
+                expression: Some("T1.id = T2.id".to_string()),
+                name1: None, // missing from_table
+                name2: Some("T2".to_string()),
+                flag: Some(1),
+                extra: None,
+            },
+        ];
+        let result = build_from_tables(&rows);
+        // JOIN is skipped due to missing name1, only T1 remains
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], "T1");
+    }
+
+    #[test]
+    fn build_from_tables_join_both_not_found() {
+        // JOIN where neither table is in existing sources
+        let rows = vec![
+            QueryRow {
+                attribute: ATTR_JOIN,
+                expression: Some("A.id = B.id".to_string()),
+                name1: Some("A".to_string()),
+                name2: Some("B".to_string()),
+                flag: Some(1),
+                extra: None,
+            },
+        ];
+        let result = build_from_tables(&rows);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].contains("INNER JOIN"));
+    }
+
+    // -- contains_table -------------------------------------------------------
+
+    #[test]
+    fn contains_table_simple() {
+        let ts = TableSource::Simple {
+            name: "Table1".to_string(),
+            expr: "Table1".to_string(),
+        };
+        assert!(ts.contains_table("Table1"));
+        assert!(ts.contains_table("table1")); // case insensitive
+        assert!(!ts.contains_table("Table2"));
+    }
+
+    #[test]
+    fn contains_table_nested_join() {
+        let ts = TableSource::Join {
+            from: Box::new(TableSource::Simple {
+                name: "T1".to_string(),
+                expr: "T1".to_string(),
+            }),
+            to: Box::new(TableSource::Simple {
+                name: "T2".to_string(),
+                expr: "T2".to_string(),
+            }),
+            join_type: 1,
+            on_conditions: vec!["T1.id = T2.id".to_string()],
+        };
+        assert!(ts.contains_table("T1"));
+        assert!(ts.contains_table("T2"));
+        assert!(!ts.contains_table("T3"));
+    }
+
+    // -- to_alias / quoting edge cases ----------------------------------------
+
+    #[test]
+    fn to_alias_none() {
+        assert_eq!(to_alias(None), "");
+    }
+
+    #[test]
+    fn to_alias_some() {
+        assert_eq!(to_alias(Some("Alias1")), " AS Alias1");
+    }
+
+    #[test]
+    fn is_quoted_true() {
+        assert!(is_quoted("[Table1]"));
+    }
+
+    #[test]
+    fn is_quoted_false() {
+        assert!(!is_quoted("Table1"));
+        assert!(!is_quoted("[T"));
+        assert!(!is_quoted("T]"));
+        assert!(!is_quoted(""));
+    }
+
+    #[test]
+    fn needs_quoting_simple() {
+        assert!(!needs_quoting("Table1"));
+        assert!(needs_quoting("My Table"));
+        assert!(needs_quoting("col-1"));
+    }
+
+    // -- sql_select with no columns and no tables ---------------------------
+
+    #[test]
+    fn sql_select_empty() {
+        let rows = vec![QueryRow {
+            attribute: ATTR_FLAG,
+            expression: None,
+            name1: None,
+            name2: None,
+            flag: Some(0),
+            extra: None,
+        }];
+        let mut builder = String::new();
+        sql_select(&mut builder, &rows);
+        assert!(builder.starts_with("SELECT "));
+    }
 }

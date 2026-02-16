@@ -1540,4 +1540,354 @@ mod tests {
             other => panic!("Expected Binary for RESERVED_BINARY_DATA, got: {other:?}"),
         }
     }
+
+    // -- crack_row_jet4 error paths -------------------------------------------
+
+    #[test]
+    fn crack_row_jet4_empty() {
+        assert!(crack_row_jet4(&[]).is_err());
+    }
+
+    #[test]
+    fn crack_row_jet4_too_short_for_col_count() {
+        assert!(crack_row_jet4(&[0x01]).is_err());
+    }
+
+    #[test]
+    fn crack_row_jet4_short_for_null_mask() {
+        // col_count=8 (need 1 byte null mask + 2 byte var_col_count = 3 tail min)
+        // total row must be >= 2 + 3 = 5 bytes, provide only 4
+        assert!(crack_row_jet4(&[0x08, 0x00, 0x00, 0x00]).is_err());
+    }
+
+    // -- crack_row_jet3 edge cases -------------------------------------------
+
+    #[test]
+    fn crack_row_jet3_empty() {
+        assert!(crack_row_jet3(&[]).is_err());
+    }
+
+    #[test]
+    fn crack_row_jet3_minimal_null_mask_covers_row() {
+        // col_count=8 → null_mask_len=1, row has only 1 byte
+        // null_mask_start = 1 - 1 = 0 → early return
+        let row = [0x08]; // col_count=8 stored as u8
+        let cracked = crack_row_jet3(&row).unwrap();
+        assert_eq!(cracked.col_count, 8);
+        assert_eq!(cracked.var_col_count, 0);
+    }
+
+    #[test]
+    fn crack_row_jet3_vcc_pos_zero() {
+        // col_count=1, null_mask_len=1
+        // row = [0x01, null_mask]
+        // null_mask_start = 2 - 1 = 1, vcc_pos = 1-1 = 0 → early return
+        let row = [0x01, 0xFF];
+        let cracked = crack_row_jet3(&row).unwrap();
+        assert_eq!(cracked.col_count, 1);
+        assert_eq!(cracked.var_col_count, 0);
+    }
+
+    #[test]
+    fn crack_row_jet3_offset_table_too_short() {
+        // Build a row where col_ptr < offset_entries
+        // col_count=1 → null_mask_len=1
+        // row = [0x01, var_col_count=5, null_mask]
+        // null_mask_start = 3-1 = 2, vcc_pos = 2-1 = 1
+        // var_col_count = row[1] = 5, offset_entries = 6
+        // num_jumps = (3-1)/256 = 0
+        // col_ptr = 1 - 0 - 1 = 0
+        // col_ptr(0) < offset_entries(6) → error
+        let row = [0x01, 0x05, 0xFF];
+        assert!(crack_row_jet3(&row).is_err());
+    }
+
+    // -- read_fixed_value additional types ------------------------------------
+
+    fn make_jet4_row_with_fixed(fixed_data: &[u8]) -> Vec<u8> {
+        let mut row_data = vec![0x01, 0x00]; // col_count = 1
+        row_data.extend_from_slice(fixed_data);
+        let eod = row_data.len() as u16;
+        row_data.extend_from_slice(&eod.to_le_bytes()); // EOD
+        row_data.extend_from_slice(&0u16.to_le_bytes()); // var_col_count = 0
+        row_data.push(0xFF); // null_mask
+        row_data
+    }
+
+    fn make_col_def(col_type: ColumnType, col_size: u16) -> ColumnDef {
+        ColumnDef {
+            name: "x".into(),
+            col_type,
+            col_num: 0,
+            var_col_num: 0,
+            fixed_offset: 0,
+            col_size,
+            flags: 0x01,
+            is_fixed: true,
+            scale: 0,
+            precision: 0,
+        }
+    }
+
+    #[test]
+    fn read_fixed_byte() {
+        let row_data = make_jet4_row_with_fixed(&[42]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Byte, 1);
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Byte(42));
+    }
+
+    #[test]
+    fn read_fixed_bigint() {
+        let data = 123456789i64.to_le_bytes();
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::BigInt, 8);
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::BigInt(123456789));
+    }
+
+    #[test]
+    fn read_fixed_float() {
+        let data = 1.5f32.to_le_bytes();
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Float, 4);
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Float(1.5));
+    }
+
+    #[test]
+    fn read_fixed_double() {
+        let data = 3.14f64.to_le_bytes();
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Double, 8);
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Double(3.14));
+    }
+
+    #[test]
+    fn read_fixed_money() {
+        let data = 10_000i64.to_le_bytes();
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Money, 8);
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::Money("1.0000".to_string())
+        );
+    }
+
+    #[test]
+    fn read_fixed_numeric() {
+        let mut num_bytes = [0u8; 17];
+        num_bytes[0] = 0x00; // positive
+        num_bytes[13] = 0x39; // 12345 LE group
+        num_bytes[14] = 0x30;
+        let row_data = make_jet4_row_with_fixed(&num_bytes);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Numeric, 17);
+        col.scale = 2;
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::Numeric("123.45".to_string())
+        );
+    }
+
+    #[test]
+    fn read_fixed_timestamp() {
+        let data = 37623.0f64.to_le_bytes();
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Timestamp, 8);
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::Timestamp(37623.0)
+        );
+    }
+
+    #[test]
+    fn read_fixed_complex_type() {
+        let data = 42i32.to_le_bytes();
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::ComplexType, 4);
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Long(42));
+    }
+
+    #[test]
+    fn read_fixed_unknown_type() {
+        let data = [0xDE, 0xAD];
+        let row_data = make_jet4_row_with_fixed(&data);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Unknown(0x99), 2);
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::Binary(vec![0xDE, 0xAD])
+        );
+    }
+
+    // -- read_fixed_value Null on out-of-range offset -------------------------
+
+    #[test]
+    fn read_fixed_byte_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Byte, 1);
+        col.fixed_offset = 100; // way past data
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_int_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Int, 2);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_long_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Long, 4);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_bigint_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::BigInt, 8);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_float_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Float, 4);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_double_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Double, 8);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_money_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Money, 8);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_guid_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Guid, 16);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_numeric_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Numeric, 17);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_timestamp_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Timestamp, 8);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_complex_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::ComplexType, 4);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    #[test]
+    fn read_fixed_unknown_null_offset_out_of_range() {
+        let row_data = make_jet4_row_with_fixed(&[0x01]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Unknown(0x99), 2);
+        col.fixed_offset = 100;
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    // -- read_variable_value edge cases ---------------------------------------
+
+    #[test]
+    fn read_variable_var_idx_out_of_range() {
+        // Build row with 0 var cols, then request var_col_num=5
+        let row_data = make_jet4_row_with_fixed(&[0x42]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Text, 255);
+        col.is_fixed = false;
+        col.var_col_num = 5;
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        assert_eq!(
+            read_variable_value(&cracked, &col, false, &mut reader),
+            Value::Null
+        );
+    }
+
+    // -- read_lval_data edge cases -------------------------------------------
+
+    #[test]
+    fn lval_too_short() {
+        assert_eq!(read_lval_data(&[0x01, 0x02], None), None);
+    }
+
+    #[test]
+    fn lval_single_page_too_short_for_pg_row() {
+        // LVAL_SINGLE_PAGE flag but < 8 bytes
+        let flags: u32 = LVAL_SINGLE_PAGE | 10;
+        let mut var_data = Vec::new();
+        var_data.extend_from_slice(&flags.to_le_bytes());
+        var_data.extend_from_slice(&[0x00, 0x00, 0x00]); // only 3 more bytes, need 4
+        assert_eq!(read_lval_data(&var_data, None), None);
+    }
+
+    #[test]
+    fn lval_multi_page_too_short_for_pg_row() {
+        // LVAL_MULTI_PAGE flag but < 8 bytes
+        let flags: u32 = 10; // LVAL_MULTI_PAGE = 0x00000000
+        let mut var_data = Vec::new();
+        var_data.extend_from_slice(&flags.to_le_bytes());
+        var_data.extend_from_slice(&[0x00, 0x00, 0x00]); // only 3 more bytes
+        assert_eq!(read_lval_data(&var_data, None), None);
+    }
+
+    // -- read_fixed_value variable-length type fallback -----------------------
+
+    #[test]
+    fn read_fixed_text_returns_null() {
+        // Text is variable-length, should not reach fixed path → returns Null
+        let row_data = make_jet4_row_with_fixed(&[0x41, 0x00, 0x42, 0x00]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::Text, 255);
+        assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
 }

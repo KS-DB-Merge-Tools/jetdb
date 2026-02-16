@@ -1049,4 +1049,128 @@ mod tests {
         assert_eq!(cursor.position(), 0); // position unchanged
         assert!(cursor.u16_le_at(2).is_err());
     }
+
+    // -----------------------------------------------------------------------
+    // build_index_defs tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_index_defs_normal_index() {
+        let logical = vec![LogicalIndex {
+            index_num: 1,
+            index_col_entry: 0,
+            fk_index_type: 0,
+            fk_index_number: 0,
+            fk_table_page: 0,
+            update_action: 0,
+            delete_action: 0,
+            index_type: crate::format::index_type::NORMAL,
+        }];
+        let col = IndexColumn {
+            col_num: 3,
+            order: IndexColumnOrder::Ascending,
+        };
+        let physical: Vec<PhysicalIndexEntry> = vec![(vec![col], 0x01, 100)];
+        let names = vec!["PK_Id".to_string()];
+
+        let result = build_index_defs(&logical, &physical, names);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "PK_Id");
+        assert_eq!(result[0].index_num, 1);
+        assert_eq!(result[0].columns.len(), 1);
+        assert_eq!(result[0].columns[0].col_num, 3);
+        assert_eq!(result[0].flags, 0x01);
+        assert_eq!(result[0].first_data_page, 100);
+        assert!(result[0].foreign_key.is_none());
+    }
+
+    #[test]
+    fn build_index_defs_foreign_key() {
+        let logical = vec![LogicalIndex {
+            index_num: 2,
+            index_col_entry: 0,
+            fk_index_type: 1,
+            fk_index_number: 5,
+            fk_table_page: 42,
+            update_action: 1,
+            delete_action: 2,
+            index_type: crate::format::index_type::FOREIGN_KEY,
+        }];
+        let physical: Vec<PhysicalIndexEntry> = vec![];
+        let names = vec!["FK_Ref".to_string()];
+
+        let result = build_index_defs(&logical, &physical, names);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "FK_Ref");
+        assert!(result[0].columns.is_empty());
+        let fk = result[0].foreign_key.as_ref().unwrap();
+        assert_eq!(fk.fk_index_type, 1);
+        assert_eq!(fk.fk_index_number, 5);
+        assert_eq!(fk.fk_table_page, 42);
+        assert_eq!(fk.update_action, 1);
+        assert_eq!(fk.delete_action, 2);
+    }
+
+    #[test]
+    fn build_index_defs_out_of_range_warning() {
+        // index_col_entry points beyond idx_col_defs → warning path
+        let logical = vec![LogicalIndex {
+            index_num: 3,
+            index_col_entry: 99, // out of range
+            fk_index_type: 0,
+            fk_index_number: 0,
+            fk_table_page: 0,
+            update_action: 0,
+            delete_action: 0,
+            index_type: crate::format::index_type::NORMAL,
+        }];
+        let physical: Vec<PhysicalIndexEntry> = vec![]; // empty → 99 is out of range
+        let names = vec!["BadIdx".to_string()];
+
+        let result = build_index_defs(&logical, &physical, names);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].name, "BadIdx");
+        assert!(result[0].columns.is_empty());
+        assert_eq!(result[0].flags, 0);
+        assert_eq!(result[0].first_data_page, 0);
+        assert!(result[0].foreign_key.is_none());
+    }
+
+    #[test]
+    fn build_index_defs_name_missing_uses_default() {
+        // More logical indexes than names → fallback to empty string
+        let logical = vec![
+            LogicalIndex {
+                index_num: 0,
+                index_col_entry: 0,
+                fk_index_type: 0,
+                fk_index_number: 0,
+                fk_table_page: 0,
+                update_action: 0,
+                delete_action: 0,
+                index_type: crate::format::index_type::NORMAL,
+            },
+            LogicalIndex {
+                index_num: 1,
+                index_col_entry: 0,
+                fk_index_type: 0,
+                fk_index_number: 0,
+                fk_table_page: 0,
+                update_action: 0,
+                delete_action: 0,
+                index_type: crate::format::index_type::NORMAL,
+            },
+        ];
+        let col = IndexColumn {
+            col_num: 1,
+            order: IndexColumnOrder::Ascending,
+        };
+        let physical: Vec<PhysicalIndexEntry> = vec![(vec![col], 0, 0)];
+        let names = vec!["OnlyOne".to_string()]; // only 1 name for 2 indexes
+
+        let result = build_index_defs(&logical, &physical, names);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "OnlyOne");
+        assert_eq!(result[1].name, ""); // fallback to empty
+    }
 }

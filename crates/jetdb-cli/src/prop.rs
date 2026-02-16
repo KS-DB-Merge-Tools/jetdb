@@ -183,4 +183,43 @@ mod tests {
             "\"a\\\\b\""
         );
     }
+
+    #[test]
+    fn format_value_bigint() {
+        assert_eq!(format_value(&Value::BigInt(42)), "42");
+        assert_eq!(format_value(&Value::BigInt(-1)), "-1");
+    }
+
+    #[test]
+    fn format_value_float() {
+        assert_eq!(format_value(&Value::Float(1.5)), "1.5");
+    }
+
+    #[test]
+    fn format_value_double() {
+        assert_eq!(format_value(&Value::Double(3.14)), "3.14");
+    }
+
+    #[test]
+    fn format_value_byte() {
+        assert_eq!(format_value(&Value::Byte(255)), "255");
+    }
+
+    #[test]
+    fn format_value_int() {
+        assert_eq!(format_value(&Value::Int(-42)), "-42");
+    }
+
+    #[test]
+    fn format_value_money() {
+        assert_eq!(format_value(&Value::Money("1.0000".to_string())), "1.0000");
+    }
+
+    #[test]
+    fn format_value_numeric() {
+        assert_eq!(
+            format_value(&Value::Numeric("123.45".to_string())),
+            "123.45"
+        );
+    }
 }

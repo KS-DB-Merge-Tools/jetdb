@@ -483,4 +483,43 @@ mod tests {
         assert_eq!(format_binary(&[], BinMode::Hex), "");
     }
 
+    #[test]
+    fn format_value_bigint() {
+        let opts = default_opts();
+        assert_eq!(format_value(&Value::BigInt(42), &opts), "42");
+        assert_eq!(format_value(&Value::BigInt(-1), &opts), "-1");
+    }
+
+    #[test]
+    fn format_value_float() {
+        let opts = default_opts();
+        assert_eq!(format_value(&Value::Float(1.5), &opts), "1.5");
+    }
+
+    #[test]
+    fn format_value_numeric() {
+        let opts = default_opts();
+        assert_eq!(
+            format_value(&Value::Numeric("123.45".to_string()), &opts),
+            "123.45"
+        );
+    }
+
+    #[test]
+    fn format_value_byte() {
+        let opts = default_opts();
+        assert_eq!(format_value(&Value::Byte(255), &opts), "255");
+    }
+
+    #[test]
+    fn format_value_binary_raw_empty() {
+        let mut opts = default_opts();
+        opts.bin_mode = BinMode::Raw;
+        assert_eq!(format_value(&Value::Binary(vec![]), &opts), "");
+    }
+
+    #[test]
+    fn csv_escape_carriage_return() {
+        assert_eq!(csv_escape("a\rb", ',', false), "\"a\rb\"");
+    }
 }

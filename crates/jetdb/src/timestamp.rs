@@ -259,4 +259,28 @@ mod tests {
     fn is_date_only_infinity() {
         assert!(is_date_only(f64::INFINITY));
     }
+
+    #[test]
+    fn format_unknown_specifier() {
+        let s = format_timestamp(37623.0, "%Z");
+        assert_eq!(s, "%Z");
+    }
+
+    #[test]
+    fn format_trailing_percent() {
+        let s = format_timestamp(37623.0, "end%");
+        assert!(s.ends_with('%'));
+    }
+
+    #[test]
+    fn format_no_specifiers() {
+        let s = format_timestamp(37623.0, "plain text");
+        assert_eq!(s, "plain text");
+    }
+
+    #[test]
+    fn format_empty_string() {
+        let s = format_timestamp(37623.0, "");
+        assert_eq!(s, "");
+    }
 }

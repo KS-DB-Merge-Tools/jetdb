@@ -191,4 +191,22 @@ mod tests {
         bytes[9] = 0x01; // group2 byte 0 (LE)
         assert_eq!(numeric_to_string(&bytes, 0), "4294967296");
     }
+
+    #[test]
+    fn numeric_negative_scale_zero() {
+        // negative=true (sign byte 0x80), value=42, scale=0
+        let mut bytes = [0u8; 17];
+        bytes[0] = 0x80; // negative
+        bytes[13] = 0x2A; // 42 in LE group form
+        assert_eq!(numeric_to_string(&bytes, 0), "-42");
+    }
+
+    #[test]
+    fn numeric_positive_scale_zero() {
+        // positive, value=100, scale=0
+        let mut bytes = [0u8; 17];
+        bytes[0] = 0x00;
+        bytes[13] = 0x64; // 100 in LE group form
+        assert_eq!(numeric_to_string(&bytes, 0), "100");
+    }
 }
