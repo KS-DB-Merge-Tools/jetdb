@@ -418,7 +418,10 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
     let streams: Vec<_> = vba_entries.iter().filter(|e| !is_storage(e)).collect();
 
     for entry in &storages {
-        let path = build_entry_path(entry, vba_project_id, &id_map);
+        let path = match build_entry_path(entry, vba_project_id, &id_map) {
+            Some(p) => p,
+            None => continue,
+        };
         cf.create_storage_all(&path)
             .map_err(|e| FileError::InvalidVbaProject {
                 reason: format!("failed to create storage '{path}': {e}"),
@@ -426,7 +429,10 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
     }
 
     for entry in &streams {
-        let path = build_entry_path(entry, vba_project_id, &id_map);
+        let path = match build_entry_path(entry, vba_project_id, &id_map) {
+            Some(p) => p,
+            None => continue,
+        };
         let mut stream = cf
             .create_stream(&path)
             .map_err(|e| FileError::InvalidVbaProject {
@@ -458,11 +464,14 @@ fn is_storage(entry: &StorageEntry) -> bool {
 ///
 /// `vba_project_id` is the ID of the VBAProject storage entry, which
 /// corresponds to the root of the CFB compound file.
+///
+/// Returns `None` if the parent chain is broken (circular reference or
+/// missing parent), logging a warning so the caller can skip the entry.
 fn build_entry_path(
     entry: &StorageEntry,
     vba_project_id: i32,
     id_map: &HashMap<i32, &StorageEntry>,
-) -> String {
+) -> Option<String> {
     let mut parts = vec![entry.name.clone()];
     let mut current_parent = entry.parent_id;
     let mut visited = HashSet::new();
@@ -470,19 +479,30 @@ fn build_entry_path(
     // Walk up the tree, stopping at VBAProject (which is the CFB root)
     while current_parent != vba_project_id {
         if !visited.insert(current_parent) {
-            break; // circular reference
+            log::warn!(
+                "skipping entry '{}': circular reference in parent chain",
+                entry.name
+            );
+            return None;
         }
         match id_map.get(&current_parent) {
             Some(parent) => {
                 parts.push(parent.name.clone());
                 current_parent = parent.parent_id;
             }
-            None => break,
+            None => {
+                log::warn!(
+                    "skipping entry '{}': missing parent id {}",
+                    entry.name,
+                    current_parent
+                );
+                return None;
+            }
         }
     }
 
     parts.reverse();
-    format!("/{}", parts.join("/"))
+    Some(format!("/{}", parts.join("/")))
 }
 
 // ---------------------------------------------------------------------------
@@ -592,5 +612,46 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let project = read_vba_project(&mut reader).expect("failed to read VBA project");
         assert_vba_modules(&project, EXPECTED_MODULES);
+    }
+
+    // -- build_entry_path unit tests ------------------------------------------
+
+    fn make_entry(id: i32, parent_id: i32, name: &str) -> StorageEntry {
+        StorageEntry {
+            id,
+            parent_id,
+            name: name.to_string(),
+            entry_type: 0,
+            data: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn build_entry_path_normal() {
+        // VBAProject(id=1) -> VBA(id=2) -> dir(id=3)
+        let vba = make_entry(2, 1, "VBA");
+        let dir = make_entry(3, 2, "dir");
+        let id_map: HashMap<i32, &StorageEntry> = [(2, &vba)].into_iter().collect();
+        assert_eq!(
+            build_entry_path(&dir, 1, &id_map),
+            Some("/VBA/dir".to_string())
+        );
+    }
+
+    #[test]
+    fn build_entry_path_circular() {
+        // A(id=2, parent=3) -> B(id=3, parent=2) — cycle
+        let a = make_entry(2, 3, "A");
+        let b = make_entry(3, 2, "B");
+        let id_map: HashMap<i32, &StorageEntry> = [(2, &a), (3, &b)].into_iter().collect();
+        assert_eq!(build_entry_path(&a, 1, &id_map), None);
+    }
+
+    #[test]
+    fn build_entry_path_missing_parent() {
+        // Entry with parent_id=99 which doesn't exist in the map
+        let entry = make_entry(2, 99, "orphan");
+        let id_map: HashMap<i32, &StorageEntry> = HashMap::new();
+        assert_eq!(build_entry_path(&entry, 1, &id_map), None);
     }
 }
