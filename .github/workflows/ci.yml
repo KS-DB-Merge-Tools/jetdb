@@ -13,8 +13,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy -- -D warnings
+
   test:
     name: Test
+    needs: clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -32,33 +44,12 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-llvm-cov
+      - uses: taiki-e/install-action@cargo-llvm-cov
       - run: cargo llvm-cov --workspace
-
-  clippy:
-    name: Clippy
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D warnings
-
-  audit:
-    name: Audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-audit
-      - run: cargo audit
 
   doc:
     name: Doc
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -66,13 +57,31 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo doc --workspace
 
+  audit:
+    name: Audit
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   complexity:
     name: Complexity
+    needs: test
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo install rust-code-analysis-cli --locked
+      - name: Cache rust-code-analysis-cli
+        id: cache-rca
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/rust-code-analysis-cli
+          key: rca-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+      - if: steps.cache-rca.outputs.cache-hit != 'true'
+        run: cargo install rust-code-analysis-cli --locked
       - run: rust-code-analysis-cli -m -p crates/ -O json
