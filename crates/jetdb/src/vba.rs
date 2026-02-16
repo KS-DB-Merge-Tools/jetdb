@@ -454,15 +454,16 @@ fn build_entry_path(
 ) -> String {
     let mut parts = vec![entry.name.clone()];
     let mut current_parent = entry.parent_id;
+    let mut visited = HashSet::new();
 
     // Walk up the tree, stopping at VBAProject (which is the CFB root)
     while current_parent != vba_project_id {
+        if !visited.insert(current_parent) {
+            break; // circular reference
+        }
         match id_map.get(&current_parent) {
             Some(parent) => {
                 parts.push(parent.name.clone());
-                if parent.parent_id == current_parent {
-                    break; // self-referential, stop
-                }
                 current_parent = parent.parent_id;
             }
             None => break,
