@@ -81,6 +81,7 @@ fn main() -> Result<(), jetdb::FileError> {
 ```
 
 The `skipped_rows` field of [`ReadResult`] indicates how many rows were skipped due to read errors.
+Call `warn_skipped(table)` to emit a `log::warn!` message when any rows were skipped. Internal metadata readers (catalog, queries, relationships, properties, VBA) call this automatically.
 
 # The Value Type
 

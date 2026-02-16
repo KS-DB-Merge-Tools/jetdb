@@ -26,6 +26,7 @@ pub struct CatalogEntry {
 pub fn read_catalog(reader: &mut PageReader) -> Result<Vec<CatalogEntry>, FileError> {
     let tdef = table::read_table_def(reader, "MSysObjects", CATALOG_PAGE)?;
     let result = data::read_table_rows(reader, &tdef)?;
+    result.warn_skipped("MSysObjects");
 
     // Locate required column indices in a single pass
     let (mut id_idx, mut name_idx, mut type_idx, mut flags_idx) = (None, None, None, None);

@@ -56,6 +56,7 @@ pub fn read_object_properties(
     let is_jet3 = reader.header().version.is_jet3();
     let tdef = table::read_table_def(reader, "MSysObjects", CATALOG_PAGE)?;
     let result = data::read_table_rows(reader, &tdef)?;
+    result.warn_skipped("MSysObjects");
 
     // Locate Name and LvProp column indices
     let (mut name_idx, mut lvprop_idx) = (None, None);

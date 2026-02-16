@@ -276,6 +276,7 @@ pub fn read_queries(reader: &mut PageReader) -> Result<Vec<QueryDef>, FileError>
 
     let tdef = table::read_table_def(reader, "MSysQueries", queries_page)?;
     let result = data::read_table_rows(reader, &tdef)?;
+    result.warn_skipped("MSysQueries");
 
     let ci = resolve_query_columns(&tdef.columns)?;
 

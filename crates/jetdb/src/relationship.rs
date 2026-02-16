@@ -66,6 +66,7 @@ pub fn read_relationships(reader: &mut PageReader) -> Result<Vec<Relationship>, 
     // Read table definition and rows
     let tdef = table::read_table_def(reader, "MSysRelationships", rel_page)?;
     let result = data::read_table_rows(reader, &tdef)?;
+    result.warn_skipped("MSysRelationships");
 
     // Locate column indices
     let mut rel_name_idx = None;

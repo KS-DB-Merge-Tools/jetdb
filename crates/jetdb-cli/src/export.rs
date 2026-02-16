@@ -241,12 +241,7 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
 
     out.flush().map_err(jetdb::FileError::Io)?;
 
-    if result.skipped_rows > 0 {
-        log::warn!(
-            "{} row(s) skipped due to parse errors",
-            result.skipped_rows
-        );
-    }
+    result.warn_skipped(&args.table);
 
     Ok(())
 }

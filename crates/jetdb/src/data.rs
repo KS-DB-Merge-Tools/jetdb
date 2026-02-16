@@ -48,6 +48,18 @@ pub struct ReadResult {
     pub skipped_rows: usize,
 }
 
+impl ReadResult {
+    /// Log a warning if any rows were skipped during parsing.
+    pub fn warn_skipped(&self, table: &str) {
+        if self.skipped_rows > 0 {
+            log::warn!(
+                "{table}: {n} row(s) skipped due to parse errors",
+                n = self.skipped_rows
+            );
+        }
+    }
+}
+
 /// Read all data rows from the table's data pages.
 ///
 /// Returns a `ReadResult` containing the successfully parsed rows and a count

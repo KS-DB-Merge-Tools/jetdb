@@ -114,6 +114,7 @@ fn read_storage_entries(reader: &mut PageReader) -> Result<Vec<StorageEntry>, Fi
 
     let tdef = table::read_table_def(reader, &entry.name, entry.table_page)?;
     let result = data::read_table_rows(reader, &tdef)?;
+    result.warn_skipped("MSysAccessStorage");
 
     // Locate column indices
     let (mut id_idx, mut parent_id_idx, mut name_idx, mut type_idx, mut lv_idx) =
@@ -199,6 +200,7 @@ fn read_access_objects_cfb(reader: &mut PageReader) -> Result<Vec<u8>, FileError
 
     let tdef = table::read_table_def(reader, &entry.name, entry.table_page)?;
     let result = data::read_table_rows(reader, &tdef)?;
+    result.warn_skipped("MSysAccessObjects");
 
     // Locate column indices
     let (mut data_idx, mut id_idx) = (None, None);
