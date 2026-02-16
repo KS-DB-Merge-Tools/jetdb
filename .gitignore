@@ -14,6 +14,9 @@ Cargo.lock
 # Cargo mutants
 **/mutants.out*/
 
+# Coverage profiling data (cargo llvm-cov)
+*.profraw
+
 # OS files
 .DS_Store
 Thumbs.db
