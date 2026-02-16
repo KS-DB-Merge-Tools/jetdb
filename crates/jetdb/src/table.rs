@@ -129,16 +129,17 @@ pub fn read_table_def(
     let tdef_buf = build_tdef_buffer(reader, tdef_page)?;
 
     let format = reader.format();
+    let cursor = &mut TdefCursor::new(&tdef_buf, 0);
 
-    // 3b. Header fields
-    let num_rows = read_u32(&tdef_buf, format.tdef_row_count_pos)?;
-    let num_var_cols = read_u16(&tdef_buf, format.tdef_var_col_count_pos)?;
-    let num_cols = read_u16(&tdef_buf, format.tdef_column_count_pos)?;
-    let num_idxs = read_u32(&tdef_buf, format.tdef_index_count_pos)?;
-    let num_real_idxs = read_u32(&tdef_buf, format.tdef_real_index_count_pos)?;
+    // 3b. Header fields (positional reads)
+    let num_rows = cursor.u32_le_at(format.tdef_row_count_pos)?;
+    let num_var_cols = cursor.u16_le_at(format.tdef_var_col_count_pos)?;
+    let num_cols = cursor.u16_le_at(format.tdef_column_count_pos)?;
+    let num_idxs = cursor.u32_le_at(format.tdef_index_count_pos)?;
+    let num_real_idxs = cursor.u32_le_at(format.tdef_real_index_count_pos)?;
 
     // 3c. Data pages via owned-pages usage map
-    let pg_row = read_u32(&tdef_buf, format.tdef_owned_pages_pos)?;
+    let pg_row = cursor.u32_le_at(format.tdef_owned_pages_pos)?;
     let data_pages = if pg_row != 0 {
         let map_data = reader.read_pg_row(pg_row)?;
         map::collect_page_numbers(reader, &map_data)?
@@ -149,32 +150,26 @@ pub fn read_table_def(
     // 3d. Column entries
     let col_entry_start =
         format.tdef_index_entries_pos + (num_real_idxs as usize) * format.tdef_index_entry_span;
+    cursor.set_position(col_entry_start);
     let mut columns = parse_column_entries(
-        &tdef_buf,
-        col_entry_start,
+        cursor,
         format.tdef_column_entry_span,
         num_cols as usize,
         is_jet3,
         format,
     )?;
 
-    // 3e. Column names
-    let mut offset = col_entry_start + (num_cols as usize) * format.tdef_column_entry_span;
-    let (col_names, new_offset) = read_names(&tdef_buf, offset, num_cols as usize, is_jet3)?;
+    // 3e. Column names (cursor is already at correct position)
+    let col_names = read_names(cursor, num_cols as usize, is_jet3)?;
     for (col, col_name) in columns.iter_mut().zip(col_names) {
         col.name = col_name;
     }
-    offset = new_offset;
 
     // 3f. Index column definitions
-    let (mut idx_col_defs, new_offset) =
-        parse_index_column_defs(&tdef_buf, offset, num_real_idxs, format)?;
-    offset = new_offset;
+    let mut idx_col_defs = parse_index_column_defs(cursor, num_real_idxs, format)?;
 
     // 3g. Logical index definitions
-    let (logical_indexes, new_offset) =
-        parse_logical_indexes(&tdef_buf, offset, num_idxs, format)?;
-    offset = new_offset;
+    let logical_indexes = parse_logical_indexes(cursor, num_idxs, format)?;
 
     // Adjust idx_col_defs length based on actual non-FK count in section [6].
     let non_fk_count = logical_indexes
@@ -186,7 +181,7 @@ pub fn read_table_def(
     }
 
     // 3h. Index names
-    let (idx_names, _) = read_names(&tdef_buf, offset, num_idxs as usize, is_jet3)?;
+    let idx_names = read_names(cursor, num_idxs as usize, is_jet3)?;
 
     // 3i. Build index defs
     let indexes = build_index_defs(&logical_indexes, &idx_col_defs, idx_names);
@@ -236,118 +231,183 @@ fn build_tdef_buffer(reader: &mut PageReader, tdef_page: u32) -> Result<Vec<u8>,
     Ok(buf)
 }
 
-/// Read a sequence of names from the TDEF buffer.
+// ---------------------------------------------------------------------------
+// TdefCursor — byte I/O abstraction for TDEF buffer parsing
+// ---------------------------------------------------------------------------
+
+struct TdefCursor<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> TdefCursor<'a> {
+    fn new(buf: &'a [u8], pos: usize) -> Self {
+        Self { buf, pos }
+    }
+
+    fn position(&self) -> usize {
+        self.pos
+    }
+
+    fn set_position(&mut self, pos: usize) {
+        self.pos = pos;
+    }
+
+    // --- Sequential reads (advance cursor position) ---
+
+    fn read_u8(&mut self) -> Result<u8, FileError> {
+        if self.pos >= self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        let v = self.buf[self.pos];
+        self.pos += 1;
+        Ok(v)
+    }
+
+    fn read_u16_le(&mut self) -> Result<u16, FileError> {
+        if self.pos + 2 > self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        let v = u16::from_le_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
+        self.pos += 2;
+        Ok(v)
+    }
+
+    fn read_u32_le(&mut self) -> Result<u32, FileError> {
+        if self.pos + 4 > self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        let v = u32::from_le_bytes([
+            self.buf[self.pos],
+            self.buf[self.pos + 1],
+            self.buf[self.pos + 2],
+            self.buf[self.pos + 3],
+        ]);
+        self.pos += 4;
+        Ok(v)
+    }
+
+    fn read_bytes(&mut self, n: usize) -> Result<&'a [u8], FileError> {
+        if self.pos + n > self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        let slice = &self.buf[self.pos..self.pos + n];
+        self.pos += n;
+        Ok(slice)
+    }
+
+    fn skip(&mut self, n: usize) -> Result<(), FileError> {
+        if self.pos + n > self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        self.pos += n;
+        Ok(())
+    }
+
+    // --- Positional reads (cursor position unchanged) ---
+
+    fn u8_at(&self, pos: usize) -> Result<u8, FileError> {
+        if pos >= self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        Ok(self.buf[pos])
+    }
+
+    fn u16_le_at(&self, pos: usize) -> Result<u16, FileError> {
+        if pos + 2 > self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        Ok(u16::from_le_bytes([self.buf[pos], self.buf[pos + 1]]))
+    }
+
+    fn u32_le_at(&self, pos: usize) -> Result<u32, FileError> {
+        if pos + 4 > self.buf.len() {
+            return Err(FileError::InvalidTableDef {
+                reason: "unexpected end of TDEF buffer",
+            });
+        }
+        Ok(u32::from_le_bytes([
+            self.buf[pos],
+            self.buf[pos + 1],
+            self.buf[pos + 2],
+            self.buf[pos + 3],
+        ]))
+    }
+}
+
+/// Read a sequence of names from the TDEF buffer via cursor.
 ///
 /// Jet3 uses `[len: u8][Latin-1 bytes]`, Jet4+ uses `[len: u16 LE][UTF-16LE bytes]`.
-/// Returns the names and the offset after the last name.
 fn read_names(
-    buf: &[u8],
-    mut offset: usize,
+    cursor: &mut TdefCursor,
     count: usize,
     is_jet3: bool,
-) -> Result<(Vec<String>, usize), FileError> {
+) -> Result<Vec<String>, FileError> {
     let mut names = Vec::with_capacity(count);
     for _ in 0..count {
         if is_jet3 {
-            if offset >= buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "name length extends beyond TDEF buffer",
-                });
-            }
-            let name_len = buf[offset] as usize;
-            offset += 1;
-            let name_end = offset + name_len;
-            if name_end > buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "name extends beyond TDEF buffer",
-                });
-            }
-            names.push(encoding::decode_latin1(&buf[offset..name_end]));
-            offset = name_end;
+            let name_len = cursor.read_u8()? as usize;
+            let bytes = cursor.read_bytes(name_len)?;
+            names.push(encoding::decode_latin1(bytes));
         } else {
-            if offset + 2 > buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "name length extends beyond TDEF buffer",
-                });
-            }
-            let name_len =
-                u16::from_le_bytes([buf[offset], buf[offset + 1]]) as usize;
-            offset += 2;
-            let name_end = offset + name_len;
-            if name_end > buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "name extends beyond TDEF buffer",
-                });
-            }
+            let name_len = cursor.read_u16_le()? as usize;
+            let bytes = cursor.read_bytes(name_len)?;
             names.push(
-                encoding::decode_utf16le(&buf[offset..name_end]).map_err(|_| {
-                    FileError::InvalidTableDef {
-                        reason: "invalid UTF-16LE name",
-                    }
+                encoding::decode_utf16le(bytes).map_err(|_| FileError::InvalidTableDef {
+                    reason: "invalid UTF-16LE name",
                 })?,
             );
-            offset = name_end;
         }
     }
-    Ok((names, offset))
+    Ok(names)
 }
 
-/// Parse column definition entries from the TDEF buffer.
+/// Parse column definition entries from the TDEF buffer via cursor.
 fn parse_column_entries(
-    buf: &[u8],
-    start: usize,
+    cursor: &mut TdefCursor,
     span: usize,
     count: usize,
     is_jet3: bool,
     format: &JetFormat,
 ) -> Result<Vec<ColumnDef>, FileError> {
     let mut columns = Vec::with_capacity(count);
-    for i in 0..count {
-        let offset = start + i * span;
-        let col = buf
-            .get(offset..offset + span)
-            .ok_or(FileError::InvalidTableDef {
-                reason: "column entry extends beyond TDEF buffer",
-            })?;
+    for _ in 0..count {
+        let entry_start = cursor.position();
 
-        let col_type = ColumnType::try_from(col[0])?;
+        let col_type = ColumnType::try_from(cursor.u8_at(entry_start)?)?;
 
         let (col_num, var_col_num) = if is_jet3 {
             (
-                col[format.coldef_number_pos] as u16,
-                u16::from_le_bytes([
-                    col[format.coldef_var_col_index_pos],
-                    col[format.coldef_var_col_index_pos + 1],
-                ]),
+                cursor.u8_at(entry_start + format.coldef_number_pos)? as u16,
+                cursor.u16_le_at(entry_start + format.coldef_var_col_index_pos)?,
             )
         } else {
             (
-                u16::from_le_bytes([
-                    col[format.coldef_number_pos],
-                    col[format.coldef_number_pos + 1],
-                ]),
-                u16::from_le_bytes([
-                    col[format.coldef_var_col_index_pos],
-                    col[format.coldef_var_col_index_pos + 1],
-                ]),
+                cursor.u16_le_at(entry_start + format.coldef_number_pos)?,
+                cursor.u16_le_at(entry_start + format.coldef_var_col_index_pos)?,
             )
         };
 
-        let flags = col[format.coldef_flags_pos];
+        let flags = cursor.u8_at(entry_start + format.coldef_flags_pos)?;
         let is_fixed = (flags & crate::format::column_flags::FIXED) != 0;
-
-        let fixed_offset = u16::from_le_bytes([
-            col[format.coldef_fixed_data_pos],
-            col[format.coldef_fixed_data_pos + 1],
-        ]);
-
-        let col_size = u16::from_le_bytes([
-            col[format.coldef_length_pos],
-            col[format.coldef_length_pos + 1],
-        ]);
-
-        let scale = col[format.coldef_scale_pos];
-        let precision = col[format.coldef_precision_pos];
+        let fixed_offset = cursor.u16_le_at(entry_start + format.coldef_fixed_data_pos)?;
+        let col_size = cursor.u16_le_at(entry_start + format.coldef_length_pos)?;
+        let scale = cursor.u8_at(entry_start + format.coldef_scale_pos)?;
+        let precision = cursor.u8_at(entry_start + format.coldef_precision_pos)?;
 
         columns.push(ColumnDef {
             name: String::new(), // filled by read_names
@@ -361,38 +421,27 @@ fn parse_column_entries(
             scale,
             precision,
         });
+
+        cursor.set_position(entry_start + span);
     }
     Ok(columns)
 }
 
 /// Parse index column definitions from TDEF section [5].
 fn parse_index_column_defs(
-    buf: &[u8],
-    mut offset: usize,
+    cursor: &mut TdefCursor,
     count: u32,
     format: &JetFormat,
-) -> Result<(Vec<PhysicalIndexEntry>, usize), FileError> {
+) -> Result<Vec<PhysicalIndexEntry>, FileError> {
     let mut idx_col_defs = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
-        if offset + format.idx_col_block_size > buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "index column definition entry extends beyond TDEF buffer",
-            });
-        }
-
-        offset += format.idx_col_skip_before;
+        cursor.skip(format.idx_col_skip_before)?;
 
         let mut idx_columns = Vec::new();
         for _ in 0..MAX_INDEX_COLUMNS {
-            if offset + 3 > buf.len() {
-                return Err(FileError::InvalidTableDef {
-                    reason: "index column slot extends beyond TDEF buffer",
-                });
-            }
-            let col_id = u16::from_le_bytes([buf[offset], buf[offset + 1]]);
-            let order_flag = buf[offset + 2];
-            offset += 3;
+            let col_id = cursor.read_u16_le()?;
+            let order_flag = cursor.read_u8()?;
 
             if col_id != 0xFFFF {
                 let order = if order_flag == 0x01 {
@@ -407,82 +456,39 @@ fn parse_index_column_defs(
             }
         }
 
-        if offset + 8 > buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "index usage map / first page extends beyond TDEF buffer",
-            });
-        }
-        offset += 4;
-
-        let first_pg = u32::from_le_bytes([
-            buf[offset],
-            buf[offset + 1],
-            buf[offset + 2],
-            buf[offset + 3],
-        ]);
-        offset += 4;
-
-        offset += format.idx_col_skip_before_flags;
-
-        if offset >= buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "index flags extends beyond TDEF buffer",
-            });
-        }
-        let idx_flags = buf[offset];
-        offset += 1;
-
-        offset += format.idx_col_skip_after_flags;
+        cursor.skip(4)?; // usage map reference
+        let first_pg = cursor.read_u32_le()?;
+        cursor.skip(format.idx_col_skip_before_flags)?;
+        let idx_flags = cursor.read_u8()?;
+        cursor.skip(format.idx_col_skip_after_flags)?;
 
         idx_col_defs.push((idx_columns, idx_flags, first_pg));
     }
 
-    Ok((idx_col_defs, offset))
+    Ok(idx_col_defs)
 }
 
 /// Parse logical index definitions from TDEF section [6].
 fn parse_logical_indexes(
-    buf: &[u8],
-    mut offset: usize,
+    cursor: &mut TdefCursor,
     count: u32,
     format: &JetFormat,
-) -> Result<(Vec<LogicalIndex>, usize), FileError> {
+) -> Result<Vec<LogicalIndex>, FileError> {
     let mut logical_indexes = Vec::with_capacity(count as usize);
 
     for _ in 0..count {
-        let entry_start = offset;
-        if entry_start + format.idx_info_block_size > buf.len() {
-            return Err(FileError::InvalidTableDef {
-                reason: "logical index entry extends beyond TDEF buffer",
-            });
-        }
-        let entry = &buf[entry_start..entry_start + format.idx_info_block_size];
+        let entry_start = cursor.position();
 
-        let skip = format.idx_info_skip_before;
-
-        let index_num = u16::from_le_bytes([entry[skip], entry[skip + 1]]);
-        let index_col_entry = u32::from_le_bytes([
-            entry[skip + 4],
-            entry[skip + 5],
-            entry[skip + 6],
-            entry[skip + 7],
-        ]);
-        let fk_index_type = entry[skip + 8];
-        let fk_index_number = u32::from_le_bytes([
-            entry[skip + 9],
-            entry[skip + 10],
-            entry[skip + 11],
-            entry[skip + 12],
-        ]);
-        let fk_table_page = u32::from_le_bytes([
-            entry[skip + 13],
-            entry[skip + 14],
-            entry[skip + 15],
-            entry[skip + 16],
-        ]);
-        let update_action = entry[skip + 17];
-        let delete_action = entry[skip + 18];
-        let index_type = entry[format.idx_info_type_offset];
+        cursor.skip(format.idx_info_skip_before)?;
+        let index_num = cursor.read_u16_le()?;
+        cursor.skip(2)?; // padding
+        let index_col_entry = cursor.read_u32_le()?;
+        let fk_index_type = cursor.read_u8()?;
+        let fk_index_number = cursor.read_u32_le()?;
+        let fk_table_page = cursor.read_u32_le()?;
+        let update_action = cursor.read_u8()?;
+        let delete_action = cursor.read_u8()?;
+        let index_type = cursor.u8_at(entry_start + format.idx_info_type_offset)?;
 
         logical_indexes.push(LogicalIndex {
             index_num,
@@ -495,10 +501,10 @@ fn parse_logical_indexes(
             index_type,
         });
 
-        offset += format.idx_info_block_size;
+        cursor.set_position(entry_start + format.idx_info_block_size);
     }
 
-    Ok((logical_indexes, offset))
+    Ok(logical_indexes)
 }
 
 /// Combine logical indexes, column definitions, and names into `IndexDef` entries.
@@ -552,22 +558,6 @@ fn build_index_defs(
         }
     }
     indexes
-}
-
-fn read_u16(buf: &[u8], pos: usize) -> Result<u16, FileError> {
-    buf.get(pos..pos + 2)
-        .map(|b| u16::from_le_bytes([b[0], b[1]]))
-        .ok_or(FileError::InvalidTableDef {
-            reason: "TDEF buffer too short for u16 read",
-        })
-}
-
-fn read_u32(buf: &[u8], pos: usize) -> Result<u32, FileError> {
-    buf.get(pos..pos + 4)
-        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .ok_or(FileError::InvalidTableDef {
-            reason: "TDEF buffer too short for u32 read",
-        })
 }
 
 // ---------------------------------------------------------------------------
@@ -897,9 +887,10 @@ mod tests {
     fn read_names_jet3_latin1() {
         // Jet3 format: [len: u8][Latin-1 bytes]
         let buf = [3, b'F', b'o', b'o', 3, b'B', b'a', b'r'];
-        let (names, offset) = read_names(&buf, 0, 2, true).unwrap();
+        let mut cursor = TdefCursor::new(&buf, 0);
+        let names = read_names(&mut cursor, 2, true).unwrap();
         assert_eq!(names, vec!["Foo", "Bar"]);
-        assert_eq!(offset, 8);
+        assert_eq!(cursor.position(), 8);
     }
 
     #[test]
@@ -912,25 +903,28 @@ mod tests {
             2, 0, // len=2
             b'X', 0, // "X"
         ];
-        let (names, offset) = read_names(&buf, 0, 2, false).unwrap();
+        let mut cursor = TdefCursor::new(&buf, 0);
+        let names = read_names(&mut cursor, 2, false).unwrap();
         assert_eq!(names, vec!["Ab", "X"]);
-        assert_eq!(offset, 10);
+        assert_eq!(cursor.position(), 10);
     }
 
     #[test]
     fn read_names_boundary_error() {
-        // Buffer too short for the name length prefix
+        // Buffer too short for the name data
         let buf = [3, b'A', b'B'];
-        let result = read_names(&buf, 0, 1, true);
+        let mut cursor = TdefCursor::new(&buf, 0);
+        let result = read_names(&mut cursor, 1, true);
         assert!(result.is_err());
     }
 
     #[test]
     fn read_names_empty_count() {
         let buf = [];
-        let (names, offset) = read_names(&buf, 0, 0, true).unwrap();
+        let mut cursor = TdefCursor::new(&buf, 0);
+        let names = read_names(&mut cursor, 0, true).unwrap();
         assert!(names.is_empty());
-        assert_eq!(offset, 0);
+        assert_eq!(cursor.position(), 0);
     }
 
     // -- parse_column_entries tests -------------------------------------------
@@ -946,7 +940,8 @@ mod tests {
         entry[JET3.coldef_length_pos] = 4;
         entry[JET3.coldef_length_pos + 1] = 0;
 
-        let cols = parse_column_entries(&entry, 0, JET3.tdef_column_entry_span, 1, true, &JET3).unwrap();
+        let mut cursor = TdefCursor::new(&entry, 0);
+        let cols = parse_column_entries(&mut cursor, JET3.tdef_column_entry_span, 1, true, &JET3).unwrap();
         assert_eq!(cols.len(), 1);
         assert_eq!(cols[0].col_type, ColumnType::Long);
         assert_eq!(cols[0].col_num, 5);
@@ -967,11 +962,91 @@ mod tests {
         entry[JET4.coldef_length_pos] = 0xFF;
         entry[JET4.coldef_length_pos + 1] = 0;
 
-        let cols = parse_column_entries(&entry, 0, JET4.tdef_column_entry_span, 1, false, &JET4).unwrap();
+        let mut cursor = TdefCursor::new(&entry, 0);
+        let cols = parse_column_entries(&mut cursor, JET4.tdef_column_entry_span, 1, false, &JET4).unwrap();
         assert_eq!(cols.len(), 1);
         assert_eq!(cols[0].col_type, ColumnType::Text);
         assert_eq!(cols[0].col_num, 3);
         assert!(!cols[0].is_fixed);
         assert_eq!(cols[0].col_size, 255);
+    }
+
+    // -- TdefCursor unit tests ------------------------------------------------
+
+    #[test]
+    fn cursor_read_u8() {
+        let buf = [0xAB, 0xCD];
+        let mut cursor = TdefCursor::new(&buf, 0);
+        assert_eq!(cursor.read_u8().unwrap(), 0xAB);
+        assert_eq!(cursor.position(), 1);
+        assert_eq!(cursor.read_u8().unwrap(), 0xCD);
+        assert_eq!(cursor.position(), 2);
+    }
+
+    #[test]
+    fn cursor_read_u16_le() {
+        let buf = [0x34, 0x12, 0x78, 0x56];
+        let mut cursor = TdefCursor::new(&buf, 0);
+        assert_eq!(cursor.read_u16_le().unwrap(), 0x1234);
+        assert_eq!(cursor.position(), 2);
+        assert_eq!(cursor.read_u16_le().unwrap(), 0x5678);
+        assert_eq!(cursor.position(), 4);
+    }
+
+    #[test]
+    fn cursor_read_u32_le() {
+        let buf = [0x78, 0x56, 0x34, 0x12];
+        let mut cursor = TdefCursor::new(&buf, 0);
+        assert_eq!(cursor.read_u32_le().unwrap(), 0x12345678);
+        assert_eq!(cursor.position(), 4);
+    }
+
+    #[test]
+    fn cursor_read_bytes() {
+        let buf = [1, 2, 3, 4, 5];
+        let mut cursor = TdefCursor::new(&buf, 1);
+        let bytes = cursor.read_bytes(3).unwrap();
+        assert_eq!(bytes, &[2, 3, 4]);
+        assert_eq!(cursor.position(), 4);
+    }
+
+    #[test]
+    fn cursor_skip() {
+        let buf = [0u8; 10];
+        let mut cursor = TdefCursor::new(&buf, 0);
+        cursor.skip(5).unwrap();
+        assert_eq!(cursor.position(), 5);
+        cursor.skip(5).unwrap();
+        assert_eq!(cursor.position(), 10);
+    }
+
+    #[test]
+    fn cursor_out_of_bounds() {
+        let buf = [0xAB];
+        let mut cursor = TdefCursor::new(&buf, 0);
+        assert!(cursor.read_u16_le().is_err());
+        assert!(cursor.read_u32_le().is_err());
+        cursor.read_u8().unwrap(); // consume the one byte
+        assert!(cursor.read_u8().is_err());
+        assert!(cursor.read_bytes(1).is_err());
+        assert!(cursor.skip(1).is_err());
+    }
+
+    #[test]
+    fn cursor_u8_at() {
+        let buf = [0x10, 0x20, 0x30];
+        let cursor = TdefCursor::new(&buf, 0);
+        assert_eq!(cursor.u8_at(1).unwrap(), 0x20);
+        assert_eq!(cursor.position(), 0); // position unchanged
+        assert!(cursor.u8_at(3).is_err());
+    }
+
+    #[test]
+    fn cursor_u16_le_at() {
+        let buf = [0x00, 0x34, 0x12];
+        let cursor = TdefCursor::new(&buf, 0);
+        assert_eq!(cursor.u16_le_at(1).unwrap(), 0x1234);
+        assert_eq!(cursor.position(), 0); // position unchanged
+        assert!(cursor.u16_le_at(2).is_err());
     }
 }
