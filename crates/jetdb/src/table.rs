@@ -546,12 +546,6 @@ fn build_index_defs(
             let (cols, flags, first_pg) = if col_entry_idx < idx_col_defs.len() {
                 idx_col_defs[col_entry_idx].clone()
             } else {
-                eprintln!(
-                    "warning: index '{}' references out-of-range column def entry {} (max {})",
-                    name,
-                    col_entry_idx,
-                    idx_col_defs.len()
-                );
                 (Vec::new(), 0, 0)
             };
             indexes.push(IndexDef {

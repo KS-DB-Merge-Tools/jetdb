@@ -162,25 +162,9 @@ pub fn read_relationships(reader: &mut PageReader) -> Result<Vec<Relationship>, 
         let to_table = raw_rows[0].to_table.clone();
         let flags = raw_rows[0].flags;
 
-        // Validate consistency within the group (L-4)
-        for r in &raw_rows[1..] {
-            if r.from_table != from_table || r.to_table != to_table {
-                eprintln!(
-                    "warning: relationship '{}' has inconsistent table references across rows",
-                    name
-                );
-                break;
-            }
-        }
-        for r in &raw_rows[1..] {
-            if r.flags != flags {
-                eprintln!(
-                    "warning: relationship '{}' has inconsistent flags across rows",
-                    name
-                );
-                break;
-            }
-        }
+        // Validate consistency within the group — silently use first row's values
+        // if later rows have inconsistent table references or flags.
+
         let columns = raw_rows
             .into_iter()
             .map(|r| RelationshipColumn {
