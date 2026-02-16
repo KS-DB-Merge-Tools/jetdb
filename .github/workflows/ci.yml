@@ -14,15 +14,22 @@ env:
 
 jobs:
   test:
-    name: Clippy & Test
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            run-clippy: true
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: ${{ matrix.run-clippy && 'clippy' || '' }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy -- -D warnings
+      - if: matrix.run-clippy
+        run: cargo clippy -- -D warnings
       - run: cargo test
 
   coverage:
