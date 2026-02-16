@@ -92,13 +92,15 @@ pub fn read_table_rows(
             }
             // Skip overflow/lookup rows (multi-page rows not yet supported)
             if row_ptr & row::LOOKUP_FLAG != 0 {
+                log::warn!("skipping overflow row on page {page_num} row {row_idx}");
                 skipped_rows += 1;
                 continue;
             }
 
             let (start, size) = match find_row(format, &page_data, page_num, row_idx) {
                 Ok(v) => v,
-                Err(_) => {
+                Err(e) => {
+                    log::warn!("skipping row on page {page_num} row {row_idx}: {e}");
                     skipped_rows += 1;
                     continue;
                 }
@@ -107,7 +109,8 @@ pub fn read_table_rows(
             let row_data = &page_data[start..start + size];
             let cracked = match crack_row(row_data, is_jet3) {
                 Ok(c) => c,
-                Err(_) => {
+                Err(e) => {
+                    log::warn!("skipping row on page {page_num} row {row_idx}: {e}");
                     skipped_rows += 1;
                     continue;
                 }

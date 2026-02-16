@@ -54,14 +54,14 @@ pub fn cmd_vba(args: VbaArgs) -> ExitCode {
         VbaCommands::List(a) => match run_list(&a) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("jetdb: {e}");
+                log::error!("{e}");
                 ExitCode::FAILURE
             }
         },
         VbaCommands::Show(a) => match run_show(&a) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("jetdb: {e}");
+                log::error!("{e}");
                 ExitCode::FAILURE
             }
         },

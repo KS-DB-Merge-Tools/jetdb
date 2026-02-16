@@ -11,4 +11,5 @@ categories = ["database", "parser-implementations"]
 
 [dependencies]
 cfb = "0.14"
+log = "0.4"
 ovba = "0.7"

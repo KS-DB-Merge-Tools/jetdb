@@ -104,7 +104,7 @@ fn cmd_ver(args: VerArgs) -> ExitCode {
     match run_ver(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("jetdb: {e}");
+            log::error!("{e}");
             ExitCode::FAILURE
         }
     }
@@ -142,7 +142,7 @@ fn cmd_tables(args: TablesArgs) -> ExitCode {
     match run_tables(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("jetdb: {e}");
+            log::error!("{e}");
             ExitCode::FAILURE
         }
     }
@@ -213,7 +213,7 @@ fn cmd_schema(args: SchemaArgs) -> ExitCode {
     match run_schema(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("jetdb: {e}");
+            log::error!("{e}");
             ExitCode::FAILURE
         }
     }
@@ -248,7 +248,7 @@ fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
         match read_relationships(&mut reader) {
             Ok(rels) => rels,
             Err(e) => {
-                eprintln!("jetdb: warning: failed to read relationships: {e}");
+                log::warn!("failed to read relationships: {e}");
                 Vec::new()
             }
         }
@@ -482,6 +482,19 @@ fn format_relationship_flags(rel: &Relationship) -> String {
 // ---------------------------------------------------------------------------
 
 fn main() -> ExitCode {
+    env_logger::Builder::new()
+        .filter_level(log::LevelFilter::Warn)
+        .parse_default_env()
+        .format(|buf, record| {
+            use std::io::Write;
+            match record.level() {
+                log::Level::Error => writeln!(buf, "jetdb: {}", record.args()),
+                log::Level::Warn => writeln!(buf, "jetdb: warning: {}", record.args()),
+                _ => writeln!(buf, "jetdb: {}: {}", record.level(), record.args()),
+            }
+        })
+        .init();
+
     let cli = Cli::parse();
     match cli.command {
         Commands::Ver(args) => cmd_ver(args),

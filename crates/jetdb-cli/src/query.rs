@@ -54,14 +54,14 @@ pub fn cmd_queries(args: QueryArgs) -> ExitCode {
         QueryCommands::List(a) => match run_list(&a) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("jetdb: {e}");
+                log::error!("{e}");
                 ExitCode::FAILURE
             }
         },
         QueryCommands::Show(a) => match run_show(&a) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                eprintln!("jetdb: {e}");
+                log::error!("{e}");
                 ExitCode::FAILURE
             }
         },

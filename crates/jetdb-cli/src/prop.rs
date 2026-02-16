@@ -24,7 +24,7 @@ pub fn cmd_prop(args: PropArgs) -> ExitCode {
     match run_prop(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("jetdb: {e}");
+            log::error!("{e}");
             ExitCode::FAILURE
         }
     }

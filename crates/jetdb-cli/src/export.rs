@@ -170,7 +170,7 @@ pub fn cmd_export(args: ExportArgs) -> ExitCode {
     match run_export(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("jetdb: {e}");
+            log::error!("{e}");
             ExitCode::FAILURE
         }
     }
@@ -179,7 +179,7 @@ pub fn cmd_export(args: ExportArgs) -> ExitCode {
 fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
     let delimiter = args.delimiter.chars().next().unwrap_or(',');
     if args.delimiter.chars().count() > 1 {
-        eprintln!("jetdb: warning: only the first character of delimiter is used");
+        log::warn!("only the first character of delimiter is used");
     }
     let opts = FormatOptions {
         delimiter,
@@ -242,8 +242,8 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
     out.flush().map_err(jetdb::FileError::Io)?;
 
     if result.skipped_rows > 0 {
-        eprintln!(
-            "jetdb: warning: {} row(s) skipped due to parse errors",
+        log::warn!(
+            "{} row(s) skipped due to parse errors",
             result.skipped_rows
         );
     }
