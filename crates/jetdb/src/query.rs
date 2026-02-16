@@ -430,7 +430,7 @@ fn to_quoted_expr(s: &str) -> String {
     if is_quoted(s) {
         s.to_string()
     } else {
-        format!("[{s}]")
+        format!("[{}]", s.replace(']', "]]"))
     }
 }
 
@@ -1220,6 +1220,11 @@ mod tests {
     #[test]
     fn quoting_already_quoted() {
         assert_eq!(to_optional_quoted("[Table1]", true), "[Table1]");
+    }
+
+    #[test]
+    fn quoting_bracket_escape() {
+        assert_eq!(to_quoted_expr("col]x"), "[col]]x]");
     }
 
     // -- Integration tests with real .mdb files --
