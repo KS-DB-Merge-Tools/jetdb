@@ -6,7 +6,7 @@ or any platform Rust supports. Covers Access 97 (Jet3) through Access 2019 (ACE1
 
 ```toml
 [dependencies]
-jetdb = "0.1.1"
+jetdb = "0.2"
 ```
 
 ```rust,no_run
@@ -31,7 +31,7 @@ To read data, call functions in the following order:
 PageReader::open → read_catalog → read_table_def → read_table_rows → Value
 ```
 
-1. [`PageReader::open`] opens the database file. It automatically detects the engine version from the file header and prepares RC4 decryption if needed.
+1. [`PageReader::open`] opens the database file. It automatically detects the engine version from the file header and prepares RC4 decryption if needed. For password-protected .accdb files, use [`PageReader::open_with_password`] instead.
 2. [`read_catalog`] reads the system catalog (MSysObjects) and returns a list of database objects as a vector of [`CatalogEntry`].
 3. [`read_table_def`] parses the table definition page (TDEF) and returns a [`TableDef`] containing column and index information.
 4. [`read_table_rows`] scans the data pages and returns each row's values as [`Value`] enums.
@@ -233,6 +233,25 @@ fn main() -> Result<(), jetdb::FileError> {
 
 Available dialects: [`ddl::Sqlite`], [`ddl::Postgres`], [`ddl::Mysql`], [`ddl::Access`].
 
+## Password-Protected Databases
+
+Use [`PageReader::open_with_password`] to open .accdb files encrypted with Agile Encryption (Access 2007+).
+
+```rust,no_run
+use jetdb::{PageReader, table_names};
+
+fn main() -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password("protected.accdb", Some("secret"))?;
+    let names = table_names(&mut reader)?;
+    for name in &names {
+        println!("{name}");
+    }
+    Ok(())
+}
+```
+
+For non-encrypted files, `open_with_password` works the same as `open` (the password is ignored).
+
 # Error Handling
 
 All public functions return `Result<T,` [`FileError`]`>`.
@@ -256,4 +275,4 @@ and can be propagated with the `?` operator.
 - Read-only (no write support)
 - No index-based lookups (full table scan only)
 - [`read_table_rows`] loads all rows into memory; be mindful of memory usage with very large tables
-- Password-protected databases are not supported
+- Password-protected .accdb files require [`PageReader::open_with_password`] (Agile Encryption)

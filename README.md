@@ -24,12 +24,15 @@ cargo install jetdb-cli
 
 ```toml
 [dependencies]
-jetdb = "0.1.1"
+jetdb = "0.2"
 ```
 
 ## CLI Usage
 
 ```bash
+# Open a password-protected .accdb file
+jetdb --password secret tables protected.accdb
+
 # Show the database engine version
 jetdb ver database.mdb
 
@@ -110,7 +113,7 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 - Recover SQL from saved queries
 - Extract VBA module source code
 - Read object properties (LvProp)
-- Decrypt RC4-encrypted databases
+- Decrypt RC4-encrypted databases and password-protected .accdb files (Agile Encryption)
 - Handle Jet3 (Latin-1) and Jet4+ (UTF-16LE, compressed text) encodings
 
 ## Limitations
@@ -118,14 +121,14 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 - Read-only (no write support)
 - No index-based lookups (full table scan only)
 - Loads all rows into memory; be mindful of memory usage with very large tables
-- Password-protected databases are not supported
+- Password-protected .accdb files require `PageReader::open_with_password` (Agile Encryption)
 - Replication databases (.mda) are untested
-- Multi-page overflow rows (LOOKUP_FLAG) are skipped; some large memo/OLE fields may be missing
 
 ## Acknowledgments
 
 - [mdbtools](https://github.com/mdbtools/mdbtools) — [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) was an invaluable reference for understanding the MDB/ACCDB file format
 - [Jackcess](https://github.com/spannm/jackcess) (Apache License 2.0) — most test .mdb/.accdb files are sourced from this project (some were created independently)
+- [MS-OFFCRYPTO](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/) — Microsoft's specification for Office document encryption, used as a reference for implementing Agile Encryption support
 
 ## License
 

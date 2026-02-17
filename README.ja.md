@@ -24,12 +24,15 @@ cargo install jetdb-cli
 
 ```toml
 [dependencies]
-jetdb = "0.1.1"
+jetdb = "0.2"
 ```
 
 ## CLI の使い方
 
 ```bash
+# パスワード保護された .accdb ファイルを開く
+jetdb --password secret tables protected.accdb
+
 # データベースのエンジンバージョンを表示する
 jetdb ver database.mdb
 
@@ -110,7 +113,7 @@ fn main() -> Result<(), jetdb::FileError> {
 - 保存済みクエリからの SQL 復元
 - VBA モジュールのソースコード抽出
 - オブジェクトプロパティ（LvProp）の読み取り
-- RC4 暗号化データベースの復号
+- RC4 暗号化データベースの復号、およびパスワード保護された .accdb ファイルの復号 (Agile Encryption)
 - Jet3 (Latin-1) / Jet4 以降 (UTF-16LE、圧縮テキスト) のエンコーディング処理
 
 ## 制限事項
@@ -118,14 +121,14 @@ fn main() -> Result<(), jetdb::FileError> {
 - 読み取り専用（書き込みには対応していない）
 - インデックスを使った検索は非対応（順次スキャンのみ）
 - テーブルの全行をメモリに読み込むため、行数が非常に多いテーブルではメモリ使用量に注意
-- パスワード保護されたデータベースは非対応
+- パスワード保護された .accdb ファイルは `PageReader::open_with_password` が必要 (Agile Encryption)
 - レプリケーションデータベース (.mda) は未テスト
-- マルチページオーバーフロー行（LOOKUP_FLAG）はスキップされるため、一部の大きな Memo/OLE フィールドが欠落する可能性がある
 
 ## 謝辞
 
 - MDB/ACCDB ファイルフォーマットの理解にあたって [mdbtools](https://github.com/mdbtools/mdbtools) の [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) を大いに参考にしました
 - テスト用の .mdb / .accdb ファイルは大部分を [Jackcess](https://github.com/spannm/jackcess)（Apache License 2.0）から利用しています（一部は本プロジェクトで独自に作成）
+- Agile Encryption の実装にあたり [MS-OFFCRYPTO](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/)（Microsoft の Office ドキュメント暗号化仕様）を参考にしました
 
 ## ライセンス
 
