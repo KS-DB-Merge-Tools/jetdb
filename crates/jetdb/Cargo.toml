@@ -13,6 +13,14 @@ rust-version = "1.82"
 exclude = ["testdata/", "AGENTS*", "CLAUDE*", ".claude/"]
 
 [dependencies]
+aes = "0.8"
+base64 = "0.22"
+cbc = "0.1"
 cfb = "0.14"
 log = "0.4"
 ovba = "0.7"
+sha1 = "0.10"
+sha2 = "0.10"
+quick-xml = "0.37"
+subtle = "2.6"
+zeroize = "1.8"

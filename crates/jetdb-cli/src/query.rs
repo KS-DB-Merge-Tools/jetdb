@@ -49,16 +49,16 @@ pub struct QueryShowArgs {
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub fn cmd_queries(args: QueryArgs) -> ExitCode {
+pub fn cmd_queries(args: QueryArgs, password: Option<&str>) -> ExitCode {
     match args.command {
-        QueryCommands::List(a) => match run_list(&a) {
+        QueryCommands::List(a) => match run_list(&a, password) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 log::error!("{e}");
                 ExitCode::FAILURE
             }
         },
-        QueryCommands::Show(a) => match run_show(&a) {
+        QueryCommands::Show(a) => match run_show(&a, password) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 log::error!("{e}");
@@ -68,8 +68,8 @@ pub fn cmd_queries(args: QueryArgs) -> ExitCode {
     }
 }
 
-fn run_list(args: &QueryListArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_list(args: &QueryListArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let queries = read_queries(&mut reader)?;
 
     let mut names: Vec<&str> = queries.iter().map(|q| q.name.as_str()).collect();
@@ -90,8 +90,8 @@ fn run_list(args: &QueryListArgs) -> Result<(), jetdb::FileError> {
     Ok(())
 }
 
-fn run_show(args: &QueryShowArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_show(args: &QueryShowArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let queries = read_queries(&mut reader)?;
 
     let qdef = queries.iter().find(|q| q.name == args.query_name).ok_or(

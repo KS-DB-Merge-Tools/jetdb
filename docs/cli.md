@@ -8,6 +8,12 @@ A read-only command-line tool for Microsoft Access database files (.mdb / .accdb
 cargo install --path crates/jetdb-cli
 ```
 
+## Global Options
+
+These options can be used with any subcommand.
+
+- `--password <PASSWORD>` — Database password (for password-protected .accdb files)
+
 ## Subcommands
 
 ### ver — Show database engine version

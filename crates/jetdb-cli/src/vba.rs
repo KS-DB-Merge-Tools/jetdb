@@ -49,16 +49,16 @@ pub struct VbaShowArgs {
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub fn cmd_vba(args: VbaArgs) -> ExitCode {
+pub fn cmd_vba(args: VbaArgs, password: Option<&str>) -> ExitCode {
     match args.command {
-        VbaCommands::List(a) => match run_list(&a) {
+        VbaCommands::List(a) => match run_list(&a, password) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 log::error!("{e}");
                 ExitCode::FAILURE
             }
         },
-        VbaCommands::Show(a) => match run_show(&a) {
+        VbaCommands::Show(a) => match run_show(&a, password) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 log::error!("{e}");
@@ -68,8 +68,8 @@ pub fn cmd_vba(args: VbaArgs) -> ExitCode {
     }
 }
 
-fn run_list(args: &VbaListArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_list(args: &VbaListArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let project = read_vba_project(&mut reader)?;
 
     let mut names: Vec<&str> = project.modules.iter().map(|m| m.name.as_str()).collect();
@@ -91,8 +91,8 @@ fn run_list(args: &VbaListArgs) -> Result<(), jetdb::FileError> {
     Ok(())
 }
 
-fn run_show(args: &VbaShowArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_show(args: &VbaShowArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let project = read_vba_project(&mut reader)?;
 
     let module = project

@@ -24,6 +24,10 @@ use jetdb::{
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
+    /// Database password (for password-protected .accdb files)
+    #[arg(long = "password", global = true)]
+    password: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -100,8 +104,8 @@ struct SchemaArgs {
 // ver subcommand
 // ---------------------------------------------------------------------------
 
-fn cmd_ver(args: VerArgs) -> ExitCode {
-    match run_ver(&args) {
+fn cmd_ver(args: VerArgs, password: Option<&str>) -> ExitCode {
+    match run_ver(&args, password) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             log::error!("{e}");
@@ -110,8 +114,8 @@ fn cmd_ver(args: VerArgs) -> ExitCode {
     }
 }
 
-fn run_ver(args: &VerArgs) -> Result<(), jetdb::FileError> {
-    let reader = PageReader::open(&args.file)?;
+fn run_ver(args: &VerArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let reader = PageReader::open_with_password(&args.file, password)?;
     let version = reader.header().version;
 
     if args.long {
@@ -138,8 +142,8 @@ fn version_short_name(v: JetVersion) -> &'static str {
 // tables subcommand
 // ---------------------------------------------------------------------------
 
-fn cmd_tables(args: TablesArgs) -> ExitCode {
-    match run_tables(&args) {
+fn cmd_tables(args: TablesArgs, password: Option<&str>) -> ExitCode {
+    match run_tables(&args, password) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             log::error!("{e}");
@@ -148,8 +152,8 @@ fn cmd_tables(args: TablesArgs) -> ExitCode {
     }
 }
 
-fn run_tables(args: &TablesArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_tables(args: &TablesArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let catalog = read_catalog(&mut reader)?;
 
     let mut entries: Vec<&CatalogEntry> = catalog
@@ -209,8 +213,8 @@ fn object_type_name(t: ObjectType) -> &'static str {
 // schema subcommand
 // ---------------------------------------------------------------------------
 
-fn cmd_schema(args: SchemaArgs) -> ExitCode {
-    match run_schema(&args) {
+fn cmd_schema(args: SchemaArgs, password: Option<&str>) -> ExitCode {
+    match run_schema(&args, password) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             log::error!("{e}");
@@ -219,8 +223,8 @@ fn cmd_schema(args: SchemaArgs) -> ExitCode {
     }
 }
 
-fn run_schema(args: &SchemaArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_schema(args: &SchemaArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let catalog = read_catalog(&mut reader)?;
 
     // Collect target tables
@@ -494,14 +498,15 @@ fn main() -> ExitCode {
         .init();
 
     let cli = Cli::parse();
+    let password = cli.password;
     match cli.command {
-        Commands::Ver(args) => cmd_ver(args),
-        Commands::Tables(args) => cmd_tables(args),
-        Commands::Schema(args) => cmd_schema(args),
-        Commands::Export(args) => export::cmd_export(args),
-        Commands::Queries(args) => query::cmd_queries(args),
-        Commands::Prop(args) => prop::cmd_prop(args),
-        Commands::Vba(args) => vba::cmd_vba(args),
+        Commands::Ver(args) => cmd_ver(args, password.as_deref()),
+        Commands::Tables(args) => cmd_tables(args, password.as_deref()),
+        Commands::Schema(args) => cmd_schema(args, password.as_deref()),
+        Commands::Export(args) => export::cmd_export(args, password.as_deref()),
+        Commands::Queries(args) => query::cmd_queries(args, password.as_deref()),
+        Commands::Prop(args) => prop::cmd_prop(args, password.as_deref()),
+        Commands::Vba(args) => vba::cmd_vba(args, password.as_deref()),
     }
 }
 

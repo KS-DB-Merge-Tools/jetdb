@@ -20,8 +20,8 @@ pub struct PropArgs {
 // Command entry point
 // ---------------------------------------------------------------------------
 
-pub fn cmd_prop(args: PropArgs) -> ExitCode {
-    match run_prop(&args) {
+pub fn cmd_prop(args: PropArgs, password: Option<&str>) -> ExitCode {
+    match run_prop(&args, password) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             log::error!("{e}");
@@ -30,8 +30,8 @@ pub fn cmd_prop(args: PropArgs) -> ExitCode {
     }
 }
 
-fn run_prop(args: &PropArgs) -> Result<(), jetdb::FileError> {
-    let mut reader = PageReader::open(&args.file)?;
+fn run_prop(args: &PropArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let props = read_object_properties(&mut reader, &args.object_name)?;
 
     if props.maps.is_empty() {

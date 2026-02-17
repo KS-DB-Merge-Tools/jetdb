@@ -188,6 +188,35 @@ fn tables_conflict_t_and_big_t() {
 }
 
 // ---------------------------------------------------------------------------
+// Encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_encrypted_accdb() {
+    let path = skip_if_missing!("enc_vbaV2007.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "1234567890", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+}
+
+#[test]
+fn tables_encrypted_no_password() {
+    let path = skip_if_missing!("enc_vbaV2007.accdb");
+    let output = jetdb_bin()
+        .args(["tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("password-protected"),
+        "stderr should mention password-protected, got: {stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Error: nonexistent file
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,6 @@
 #![doc = include_str!("lib_doc.md")]
 
+pub(crate) mod agile;
 pub mod catalog;
 pub mod data;
 pub mod ddl;

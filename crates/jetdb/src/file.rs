@@ -5,7 +5,9 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
+use crate::agile::{self, AgileParams};
 use crate::format::{db_header, row, FormatError, JetFormat, JetVersion};
+use zeroize::Zeroizing;
 
 // ---------------------------------------------------------------------------
 // FileError
@@ -50,6 +52,11 @@ pub enum FileError {
     InvalidVbaProject {
         reason: String,
     },
+    PasswordRequired,
+    InvalidPassword,
+    UnsupportedEncryption {
+        reason: String,
+    },
 }
 
 impl fmt::Display for FileError {
@@ -82,6 +89,11 @@ impl fmt::Display for FileError {
             Self::QueryNotFound { name } => write!(f, "query not found: {name}"),
             Self::ModuleNotFound { name } => write!(f, "VBA module not found: {name}"),
             Self::InvalidVbaProject { reason } => write!(f, "invalid VBA project: {reason}"),
+            Self::PasswordRequired => write!(f, "this database is password-protected"),
+            Self::InvalidPassword => write!(f, "invalid password"),
+            Self::UnsupportedEncryption { reason } => {
+                write!(f, "unsupported encryption: {reason}")
+            }
         }
     }
 }
@@ -113,7 +125,7 @@ impl From<FormatError> for FileError {
 // ---------------------------------------------------------------------------
 
 /// RC4 encrypt/decrypt in-place (KSA + PRGA).
-fn rc4_transform(key: &[u8], buf: &mut [u8]) {
+pub(crate) fn rc4_transform(key: &[u8], buf: &mut [u8]) {
     // KSA
     let mut s: [u8; 256] = [0; 256];
     for (i, slot) in s.iter_mut().enumerate() {
@@ -139,7 +151,7 @@ fn rc4_transform(key: &[u8], buf: &mut [u8]) {
 }
 
 /// Fixed header encryption key used by Jet.
-const HEADER_RC4_KEY: [u8; 4] = [0xC7, 0xDA, 0x39, 0x6B];
+pub(crate) const HEADER_RC4_KEY: [u8; 4] = [0xC7, 0xDA, 0x39, 0x6B];
 
 /// Decrypt the encrypted header region of page 0.
 fn decrypt_header(page0: &mut [u8], version: JetVersion) {
@@ -244,6 +256,12 @@ pub fn find_row(
 // PageReader
 // ---------------------------------------------------------------------------
 
+/// Internal state for Agile Encryption.
+struct AgileState {
+    params: AgileParams,
+    db_key: Zeroizing<Vec<u8>>,
+}
+
 /// Page-level reader for Jet/ACE database files.
 ///
 /// Opens a database file, reads and decrypts the header, and provides
@@ -255,11 +273,85 @@ pub struct PageReader {
     page0_buf: Vec<u8>,
     page_buf: Vec<u8>,
     cached_page: Option<u32>,
+    agile: Option<AgileState>,
 }
 
 impl PageReader {
     /// Open a database file and parse the header.
+    ///
+    /// For password-protected .accdb files, this returns
+    /// [`FileError::PasswordRequired`]. Use [`open_with_password`](Self::open_with_password)
+    /// instead.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, FileError> {
+        let reader = Self::open_raw(path)?;
+
+        // Detect Agile Encryption — requires open_with_password() to decrypt
+        if reader.header.version.is_accdb() {
+            if agile::parse_encryption_info(&reader.page0_buf)?.is_some() {
+                return Err(FileError::PasswordRequired);
+            }
+        }
+
+        Ok(reader)
+    }
+
+    /// Open a database file with an optional password.
+    ///
+    /// If the file uses Agile Encryption (.accdb with password protection),
+    /// the password is required to decrypt the database contents.
+    /// For non-encrypted files, the password is ignored.
+    pub fn open_with_password(
+        path: impl AsRef<Path>,
+        password: Option<&str>,
+    ) -> Result<Self, FileError> {
+        let mut reader = Self::open_raw(path)?;
+
+        // Only .accdb files can have Agile Encryption
+        if !reader.header.version.is_accdb() {
+            return Ok(reader);
+        }
+
+        // Check for EncryptionInfo on page 0
+        let agile_params = agile::parse_encryption_info(&reader.page0_buf)?;
+        let agile_params = match agile_params {
+            Some(p) => p,
+            None => return Ok(reader),
+        };
+
+        // Password is required
+        let password = password.ok_or(FileError::PasswordRequired)?;
+
+        // Verify password and get the database key
+        let db_key = agile::verify_password(&agile_params, password)?;
+
+        // Re-decrypt page 0 with AES-CBC
+        // Page 0 needs to be re-read and decrypted with AES
+        // First, re-read the raw page 0
+        reader.file.seek(SeekFrom::Start(0))?;
+        reader.file.read_exact(&mut reader.page0_buf)?;
+
+        // Apply RC4 header decryption first (same as open_raw())
+        decrypt_header(&mut reader.page0_buf, reader.header.version);
+
+        // Now apply Agile page decryption to page 0
+        agile::decrypt_page_agile(
+            &mut reader.page0_buf,
+            &agile_params,
+            &db_key,
+            reader.header.db_key,
+            0,
+        )?;
+
+        reader.agile = Some(AgileState {
+            params: agile_params,
+            db_key,
+        });
+
+        Ok(reader)
+    }
+
+    /// Internal: open and decrypt header without checking for Agile Encryption.
+    fn open_raw(path: impl AsRef<Path>) -> Result<Self, FileError> {
         let mut file = File::open(path.as_ref())?;
         let file_size = file.metadata()?.len();
 
@@ -332,6 +424,7 @@ impl PageReader {
             page0_buf,
             page_buf,
             cached_page: None,
+            agile: None,
         })
     }
 
@@ -373,7 +466,17 @@ impl PageReader {
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.read_exact(&mut self.page_buf)?;
 
-        decrypt_page(&mut self.page_buf, self.header.db_key, page);
+        if let Some(ref agile_state) = self.agile {
+            agile::decrypt_page_agile(
+                &mut self.page_buf,
+                &agile_state.params,
+                &agile_state.db_key,
+                self.header.db_key,
+                page,
+            )?;
+        } else {
+            decrypt_page(&mut self.page_buf, self.header.db_key, page);
+        }
 
         self.cached_page = Some(page);
         Ok(&self.page_buf)
@@ -409,6 +512,7 @@ impl fmt::Debug for PageReader {
             .field("page_size", &self.header.format.page_size)
             .field("page_count", &self.page_count())
             .field("file_size", &self.file_size)
+            .field("agile_encrypted", &self.agile.is_some())
             .finish()
     }
 }
@@ -762,6 +866,18 @@ mod tests {
         };
         assert!(e.to_string().contains("oops"));
         assert!(e.to_string().contains("invalid row"));
+
+        let e = FileError::PasswordRequired;
+        assert!(e.to_string().contains("password-protected"));
+
+        let e = FileError::InvalidPassword;
+        assert!(e.to_string().contains("invalid password"));
+
+        let e = FileError::UnsupportedEncryption {
+            reason: "test".into(),
+        };
+        assert!(e.to_string().contains("unsupported encryption"));
+        assert!(e.to_string().contains("test"));
     }
 
     // -- Error::source() ------------------------------------------------------
@@ -783,6 +899,17 @@ mod tests {
         assert!(e.source().is_none());
 
         let e = FileError::InvalidUsageMap { reason: "r" };
+        assert!(e.source().is_none());
+
+        let e = FileError::PasswordRequired;
+        assert!(e.source().is_none());
+
+        let e = FileError::InvalidPassword;
+        assert!(e.source().is_none());
+
+        let e = FileError::UnsupportedEncryption {
+            reason: "r".into(),
+        };
         assert!(e.source().is_none());
 
         let io_err = std::io::Error::other("io");
@@ -837,5 +964,81 @@ mod tests {
         let mut buf = original.clone();
         decrypt_page(&mut buf, 0, 1);
         assert_eq!(buf, original); // no change when db_key == 0
+    }
+
+    // -- Agile Encryption tests -----------------------------------------------
+
+    #[test]
+    fn open_with_password_non_encrypted() {
+        let path = skip_if_missing!("V2007/testV2007.accdb");
+        // Non-encrypted file: password is ignored
+        let reader =
+            PageReader::open_with_password(&path, Some("anything")).expect("should open fine");
+        assert!(reader.agile.is_none());
+    }
+
+    #[test]
+    fn open_with_password_non_encrypted_no_password() {
+        let path = skip_if_missing!("V2007/testV2007.accdb");
+        let reader = PageReader::open_with_password(&path, None).expect("should open fine");
+        assert!(reader.agile.is_none());
+    }
+
+    #[test]
+    fn open_with_password_required() {
+        let path = skip_if_missing!("enc_vbaV2007.accdb");
+        let err = PageReader::open_with_password(&path, None).unwrap_err();
+        assert!(matches!(err, FileError::PasswordRequired));
+    }
+
+    #[test]
+    fn open_with_password_invalid() {
+        let path = skip_if_missing!("enc_vbaV2007.accdb");
+        let err = PageReader::open_with_password(&path, Some("wrongpassword")).unwrap_err();
+        assert!(matches!(err, FileError::InvalidPassword));
+    }
+
+    #[test]
+    fn open_with_password_correct() {
+        let path = skip_if_missing!("enc_vbaV2007.accdb");
+        let reader = PageReader::open_with_password(&path, Some("1234567890"))
+            .expect("should open with correct password");
+        assert!(reader.agile.is_some());
+        assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn open_with_password_mdb_ignores_password() {
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        // .mdb files should not use Agile Encryption
+        let reader =
+            PageReader::open_with_password(&path, Some("anything")).expect("should open fine");
+        assert!(reader.agile.is_none());
+    }
+
+    #[test]
+    fn open_encrypted_accdb_returns_password_required() {
+        let path = skip_if_missing!("enc_vbaV2007.accdb");
+        let err = PageReader::open(&path).unwrap_err();
+        assert!(matches!(err, FileError::PasswordRequired));
+    }
+
+    #[test]
+    fn open_with_password_enc_v2000_mdb() {
+        let path = skip_if_missing!("enc_vbaV2000.mdb");
+        // RC4 encrypted .mdb: open_with_password should work (password ignored for .mdb)
+        let reader = PageReader::open_with_password(&path, None)
+            .expect("should open RC4 encrypted .mdb");
+        assert!(reader.agile.is_none());
+        assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn open_with_password_enc_v2003_mdb() {
+        let path = skip_if_missing!("enc_vbaV2003.mdb");
+        let reader = PageReader::open_with_password(&path, None)
+            .expect("should open RC4 encrypted .mdb");
+        assert!(reader.agile.is_none());
+        assert!(reader.page_count() > 0);
     }
 }

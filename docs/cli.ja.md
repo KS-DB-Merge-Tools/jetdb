@@ -8,6 +8,12 @@ Microsoft Access データベース (.mdb / .accdb) の読み取り専用コマ�
 cargo install --path crates/jetdb-cli
 ```
 
+## グローバルオプション
+
+全てのサブコマンドで使用できるオプション。
+
+- `--password <PASSWORD>` — データベースパスワード (パスワード保護された .accdb ファイル用)
+
 ## サブコマンド
 
 ### ver — データベースエンジンバージョンの表示
