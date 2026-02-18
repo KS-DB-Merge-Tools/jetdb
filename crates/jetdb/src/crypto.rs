@@ -1354,4 +1354,258 @@ mod tests {
         assert!(matches!(result, Err(FileError::InvalidPassword)));
     }
 
+    /// Helper: read page 0 and decrypt the header region for EncryptionInfo parsing.
+    fn read_and_decrypt_page0(path: &std::path::Path) -> Vec<u8> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(path).unwrap();
+        let mut page0 = vec![0u8; 4096];
+        file.read_exact(&mut page0).unwrap();
+        let enc_len = 128;
+        let end = db_header::ENCRYPTED_START + enc_len;
+        rc4_transform(&HEADER_RC4_KEY, &mut page0[db_header::ENCRYPTED_START..end]);
+        page0
+    }
+
+    #[test]
+    fn parse_and_verify_rc4_cryptoapi() {
+        let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+        let page0 = read_and_decrypt_page0(&path);
+
+        let enc_params = parse_encryption_info(&page0).unwrap();
+        assert!(enc_params.is_some(), "EncryptionInfo should be present");
+        let enc_params = enc_params.unwrap();
+
+        let params = match &enc_params {
+            EncryptionParams::Rc4CryptoApi(p) => p,
+            other => panic!("expected Rc4CryptoApi, got {other:?}"),
+        };
+
+        assert!(params.key_size == 40 || params.key_size == 128);
+        assert!(params.verifier_hash_size > 0 && params.verifier_hash_size <= 20);
+
+        // Correct password
+        let base_hash = verify_password_rc4_cryptoapi(params, "Test123");
+        assert!(base_hash.is_ok(), "correct password should verify: {:?}", base_hash.err());
+
+        // Wrong password
+        let result = verify_password_rc4_cryptoapi(params, "WrongPassword");
+        assert!(matches!(result, Err(FileError::InvalidPassword)));
+    }
+
+    #[test]
+    fn parse_and_verify_nonstandard_aes() {
+        let path = skip_if_missing!("db-nonstandard-aes.accdb");
+        let page0 = read_and_decrypt_page0(&path);
+
+        let enc_params = parse_encryption_info(&page0).unwrap();
+        assert!(enc_params.is_some(), "EncryptionInfo should be present");
+        let enc_params = enc_params.unwrap();
+
+        let params = match &enc_params {
+            EncryptionParams::StandardAes(p) => p,
+            other => panic!("expected StandardAes, got {other:?}"),
+        };
+
+        assert!(params.key_size == 128 || params.key_size == 192 || params.key_size == 256);
+        assert_eq!(params.hash_iterations, 0, "NonStandard AES has 0 iterations");
+        assert!(params.verifier_hash_size > 0 && params.verifier_hash_size <= 20);
+
+        // Correct password
+        let iter_hash = verify_password_standard_aes(params, "password");
+        assert!(iter_hash.is_ok(), "correct password should verify: {:?}", iter_hash.err());
+
+        // Wrong password
+        let result = verify_password_standard_aes(params, "WrongPassword");
+        assert!(matches!(result, Err(FileError::InvalidPassword)));
+    }
+
+    // -- Validation tests (synthetic data) ------------------------------------
+
+    /// Build a minimal page0 with an EncryptionInfo payload at the correct offset.
+    fn build_page0_with_info(info_data: &[u8]) -> Vec<u8> {
+        let offset = db_header::ENCRYPTION_INFO_OFFSET;
+        let total = offset + 2 + info_data.len();
+        let mut page0 = vec![0u8; total.max(4096)];
+        let len = info_data.len() as u16;
+        page0[offset] = len as u8;
+        page0[offset + 1] = (len >> 8) as u8;
+        page0[offset + 2..offset + 2 + info_data.len()].copy_from_slice(info_data);
+        page0
+    }
+
+    #[test]
+    fn parse_encryption_info_too_short_for_version() {
+        // info_data is non-zero length but < 4 bytes: should error
+        let page0 = build_page0_with_info(&[0x01, 0x02]);
+        let result = parse_encryption_info(&page0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, FileError::UnsupportedEncryption { reason } if reason.contains("too short")),
+            "expected 'too short' error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_cryptoapi_header_size_huge() {
+        // version (3, 2) + flags with FCRYPTO_API_FLAG but no FAES_FLAG
+        // header_size = u32::MAX: on 64-bit this exceeds data length,
+        // on 32-bit it triggers checked_add overflow. Either way, must error.
+        let mut info_data = vec![0u8; 16];
+        info_data[0] = 3; // vMajor=3
+        info_data[2] = 2; // vMinor=2
+        info_data[4] = 0x04; // FCRYPTO_API_FLAG
+        // header_size = u32::MAX
+        info_data[8] = 0xFF;
+        info_data[9] = 0xFF;
+        info_data[10] = 0xFF;
+        info_data[11] = 0xFF;
+        let page0 = build_page0_with_info(&info_data);
+        let result = parse_encryption_info(&page0);
+        assert!(
+            matches!(&result, Err(FileError::UnsupportedEncryption { .. })),
+            "expected UnsupportedEncryption error, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_standard_aes_header_size_huge() {
+        // version (3, 2) + flags with FCRYPTO_API_FLAG + FAES_FLAG
+        // header_size = u32::MAX
+        let mut info_data = vec![0u8; 16];
+        info_data[0] = 3; // vMajor=3
+        info_data[2] = 2; // vMinor=2
+        info_data[4] = 0x24; // FCRYPTO_API_FLAG | FAES_FLAG
+        // header_size = u32::MAX
+        info_data[8] = 0xFF;
+        info_data[9] = 0xFF;
+        info_data[10] = 0xFF;
+        info_data[11] = 0xFF;
+        let page0 = build_page0_with_info(&info_data);
+        let result = parse_encryption_info(&page0);
+        assert!(
+            matches!(&result, Err(FileError::UnsupportedEncryption { .. })),
+            "expected UnsupportedEncryption error, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn parse_cryptoapi_invalid_rc4_key_size() {
+        // Build a minimal RC4 CryptoAPI header with invalid key_size=64
+        let mut info_data = vec![0u8; 200];
+        info_data[0] = 3; // vMajor=3
+        info_data[2] = 2; // vMinor=2
+        info_data[4] = 0x04; // FCRYPTO_API_FLAG
+
+        // After flags (offset 8 in info_data), CryptoAPI data begins:
+        // header_size = 40 (enough for EncryptionHeader)
+        info_data[8] = 40;
+        // EncryptionHeader at offset 12: flags(4) + sizeExtra(4) + algId(4) + algIdHash(4) + keySize(4)
+        // algId = ALGID_RC4 (0x6801) at header offset 8 (info offset 20)
+        info_data[20] = 0x01;
+        info_data[21] = 0x68;
+        // keySize = 64 (invalid for RC4) at header offset 16 (info offset 28)
+        info_data[28] = 64;
+
+        let page0 = build_page0_with_info(&info_data);
+        let result = parse_encryption_info(&page0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, FileError::UnsupportedEncryption { reason } if reason.contains("invalid RC4")),
+            "expected invalid RC4 key size error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_cryptoapi_invalid_aes_key_size() {
+        // Build a minimal NonStandard AES header with invalid key_size=64
+        let mut info_data = vec![0u8; 200];
+        info_data[0] = 3; // vMajor=3
+        info_data[2] = 2; // vMinor=2
+        info_data[4] = 0x04; // FCRYPTO_API_FLAG (no FAES_FLAG)
+
+        // header_size = 40
+        info_data[8] = 40;
+        // algId = ALGID_AES_128 (0x660E) at header offset 8 (info offset 20)
+        info_data[20] = 0x0E;
+        info_data[21] = 0x66;
+        // keySize = 64 (invalid for AES) at header offset 16 (info offset 28)
+        info_data[28] = 64;
+
+        let page0 = build_page0_with_info(&info_data);
+        let result = parse_encryption_info(&page0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, FileError::UnsupportedEncryption { reason } if reason.contains("invalid AES")),
+            "expected invalid AES key size error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn verify_rc4_cryptoapi_invalid_hash_size_zero() {
+        let params = Rc4CryptoApiParams {
+            salt: [0u8; 16],
+            encrypted_verifier: [0u8; 16],
+            verifier_hash_size: 0,
+            encrypted_verifier_hash: vec![0u8; 20],
+            key_size: 128,
+        };
+        let result = verify_password_rc4_cryptoapi(&params, "test");
+        assert!(
+            matches!(&result, Err(FileError::UnsupportedEncryption { reason }) if reason.contains("invalid verifier hash size")),
+            "expected invalid verifier hash size error, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn verify_rc4_cryptoapi_invalid_hash_size_too_large() {
+        let params = Rc4CryptoApiParams {
+            salt: [0u8; 16],
+            encrypted_verifier: [0u8; 16],
+            verifier_hash_size: 21,
+            encrypted_verifier_hash: vec![0u8; 21],
+            key_size: 128,
+        };
+        let result = verify_password_rc4_cryptoapi(&params, "test");
+        assert!(
+            matches!(&result, Err(FileError::UnsupportedEncryption { reason }) if reason.contains("invalid verifier hash size")),
+            "expected invalid verifier hash size error, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn verify_standard_aes_invalid_hash_size_zero() {
+        let params = StandardAesParams {
+            salt: [0u8; 16],
+            encrypted_verifier: [0u8; 16],
+            verifier_hash_size: 0,
+            encrypted_verifier_hash: vec![0u8; 32],
+            key_size: 128,
+            hash_iterations: 0,
+        };
+        let result = verify_password_standard_aes(&params, "test");
+        assert!(
+            matches!(&result, Err(FileError::UnsupportedEncryption { reason }) if reason.contains("invalid verifier hash size")),
+            "expected invalid verifier hash size error, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn verify_standard_aes_invalid_hash_size_too_large() {
+        let params = StandardAesParams {
+            salt: [0u8; 16],
+            encrypted_verifier: [0u8; 16],
+            verifier_hash_size: 21,
+            encrypted_verifier_hash: vec![0u8; 32],
+            key_size: 128,
+            hash_iterations: 0,
+        };
+        let result = verify_password_standard_aes(&params, "test");
+        assert!(
+            matches!(&result, Err(FileError::UnsupportedEncryption { reason }) if reason.contains("invalid verifier hash size")),
+            "expected invalid verifier hash size error, got: {result:?}"
+        );
+    }
 }

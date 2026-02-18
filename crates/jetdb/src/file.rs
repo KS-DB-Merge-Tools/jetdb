@@ -1225,6 +1225,12 @@ mod tests {
         assert!(col_names.contains(&"ID"), "ID column should exist");
 
         let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
-        assert!(!result.rows.is_empty(), "Table_One should have at least one row");
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].len(), 2);
+
+        // ID=1, Field1="test"
+        use crate::data::Value;
+        assert!(matches!(&result.rows[0][0], Value::Long(1)));
+        assert!(matches!(&result.rows[0][1], Value::Text(s) if s == "test"));
     }
 }
