@@ -1,12 +1,14 @@
-//! Agile Encryption (MS-OFFCRYPTO) support for .accdb files.
+//! Encryption support for .accdb files (MS-OFFCRYPTO).
 //!
-//! Access 2007+ uses Agile Encryption when a database password is set.
-//! The EncryptionInfo XML is stored at page 0 offset 0x299.
+//! Supports Agile Encryption, RC4 CryptoAPI, and NonStandard AES.
+//! The EncryptionInfo is stored at page 0 offset 0x299.
 
 use crate::file::FileError;
 use crate::format::db_header;
 
-use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
+use crate::file::rc4_transform;
+
+use aes::cipher::{block_padding::NoPadding, BlockDecryptMut, KeyInit, KeyIvInit};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use sha1::Sha1;
@@ -16,6 +18,22 @@ use zeroize::Zeroizing;
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
+type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
+type Aes192EcbDec = ecb::Decryptor<aes::Aes192>;
+type Aes256EcbDec = ecb::Decryptor<aes::Aes256>;
+
+// ---------------------------------------------------------------------------
+// EncryptionInfo flags (MS-OFFCRYPTO §2.3.2)
+// ---------------------------------------------------------------------------
+
+const FCRYPTO_API_FLAG: u32 = 0x04;
+const FAES_FLAG: u32 = 0x20;
+
+// CryptoAlgorithm IDs (MS-OFFCRYPTO §2.3.2)
+const ALGID_RC4: u32 = 0x6801;
+const ALGID_AES_128: u32 = 0x660E;
+const ALGID_AES_192: u32 = 0x660F;
+const ALGID_AES_256: u32 = 0x6610;
 
 // ---------------------------------------------------------------------------
 // Block key constants for password key encryptor
@@ -50,6 +68,47 @@ pub(crate) struct AgileParams {
     pub encrypted_verifier_hash_input: Vec<u8>,
     pub encrypted_verifier_hash_value: Vec<u8>,
     pub encrypted_key_value: Vec<u8>,
+}
+
+// ---------------------------------------------------------------------------
+// RC4 CryptoAPI params
+// ---------------------------------------------------------------------------
+
+/// Parameters parsed from the EncryptionInfo binary header for RC4 CryptoAPI.
+#[derive(Debug, Clone)]
+pub(crate) struct Rc4CryptoApiParams {
+    pub salt: [u8; 16],
+    pub encrypted_verifier: [u8; 16],
+    pub verifier_hash_size: u32,
+    pub encrypted_verifier_hash: Vec<u8>,
+    pub key_size: u32, // bits (40 or 128)
+}
+
+// ---------------------------------------------------------------------------
+// Standard AES params (also used for NonStandard AES with iterations=0)
+// ---------------------------------------------------------------------------
+
+/// Parameters for Standard AES / NonStandard AES encryption.
+#[derive(Debug, Clone)]
+pub(crate) struct StandardAesParams {
+    pub salt: [u8; 16],
+    pub encrypted_verifier: [u8; 16],
+    pub verifier_hash_size: u32,
+    pub encrypted_verifier_hash: Vec<u8>, // 32 bytes for AES
+    pub key_size: u32,                    // 128, 192, or 256
+    pub hash_iterations: u32,             // 50000 (standard) or 0 (non-standard)
+}
+
+// ---------------------------------------------------------------------------
+// EncryptionParams enum
+// ---------------------------------------------------------------------------
+
+/// Parsed encryption parameters from the EncryptionInfo on page 0.
+#[derive(Debug, Clone)]
+pub(crate) enum EncryptionParams {
+    Agile(AgileParams),
+    Rc4CryptoApi(Rc4CryptoApiParams),
+    StandardAes(StandardAesParams),
 }
 
 /// Supported hash algorithms.
@@ -220,16 +279,15 @@ fn parse_encrypted_key(
 // parse_encryption_info
 // ---------------------------------------------------------------------------
 
-/// Parse the EncryptionInfo from page 0. Returns `None` if no Agile
-/// Encryption is present, `Some(AgileParams)` if successfully parsed.
-pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<AgileParams>, FileError> {
+/// Parse the EncryptionInfo from page 0.
+/// Returns `None` if no encryption is present.
+pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<EncryptionParams>, FileError> {
     let offset = db_header::ENCRYPTION_INFO_OFFSET;
     if page0.len() < offset + 2 {
         return Ok(None);
     }
 
-    // EncryptionInfo length is stored as u16 LE. This is sufficient because
-    // the info must fit within page 0 (4096 bytes).
+    // EncryptionInfo length is stored as u16 LE.
     let info_len = u16::from_le_bytes([page0[offset], page0[offset + 1]]) as usize;
     if info_len == 0 {
         return Ok(None);
@@ -244,25 +302,63 @@ pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<AgileParams>,
     }
 
     let info_data = &page0[info_start..info_end];
-
-    // First 4 bytes: version (u16 LE) + reserved (u16 LE)
     if info_data.len() < 4 {
-        return Ok(None);
-    }
-    let version = u16::from_le_bytes([info_data[0], info_data[1]]);
-    let reserved = u16::from_le_bytes([info_data[2], info_data[3]]);
-
-    if version != 4 || reserved != 4 {
         return Err(FileError::UnsupportedEncryption {
-            reason: format!(
-                "unsupported EncryptionInfo version={version}, reserved={reserved} (expected 4,4 for Agile)"
-            ),
+            reason: "EncryptionInfo too short for version header".to_string(),
         });
     }
 
-    // The rest is XML — parse with quick-xml
-    let xml_bytes = &info_data[4..];
+    let v_major = u16::from_le_bytes([info_data[0], info_data[1]]);
+    let v_minor = u16::from_le_bytes([info_data[2], info_data[3]]);
 
+    match (v_major, v_minor) {
+        // Agile Encryption (MS-OFFCRYPTO §2.3.4.10)
+        (4, 4) => parse_agile_encryption_info(&info_data[4..]).map(|p| Some(EncryptionParams::Agile(p))),
+
+        // Office Binary Doc RC4 (not supported)
+        (1, 1) => Err(FileError::UnsupportedEncryption {
+            reason: "Office Binary Doc RC4 encryption (v1.1) is not supported".to_string(),
+        }),
+
+        // Extensible Encryption (not supported)
+        (3 | 4, 3) => Err(FileError::UnsupportedEncryption {
+            reason: "Extensible encryption (v3/4.3) is not supported".to_string(),
+        }),
+
+        // RC4 CryptoAPI / Standard AES / NonStandard AES
+        (2..=4, 2) => {
+            if info_data.len() < 8 {
+                return Err(FileError::UnsupportedEncryption {
+                    reason: "EncryptionInfo too short for CryptoAPI flags".to_string(),
+                });
+            }
+            let flags = u32::from_le_bytes([info_data[4], info_data[5], info_data[6], info_data[7]]);
+
+            if flags & FCRYPTO_API_FLAG == 0 {
+                return Err(FileError::UnsupportedEncryption {
+                    reason: format!("CryptoAPI flag not set in EncryptionInfo flags: 0x{flags:08x}"),
+                });
+            }
+
+            if flags & FAES_FLAG != 0 {
+                // Standard AES Encryption (MS-OFFCRYPTO §2.3.4.5)
+                parse_standard_aes_info(&info_data[8..], 50_000).map(|p| Some(EncryptionParams::StandardAes(p)))
+            } else {
+                // Try RC4 CryptoAPI first; if algId is AES, fall back to NonStandard AES
+                parse_cryptoapi_info(&info_data[8..])
+            }
+        }
+
+        _ => Err(FileError::UnsupportedEncryption {
+            reason: format!(
+                "unsupported EncryptionInfo version: vMajor={v_major}, vMinor={v_minor}"
+            ),
+        }),
+    }
+}
+
+/// Parse Agile Encryption XML from the EncryptionInfo payload.
+fn parse_agile_encryption_info(xml_bytes: &[u8]) -> Result<AgileParams, FileError> {
     let mut reader = quick_xml::Reader::from_reader(xml_bytes);
     reader.config_mut().trim_text(true);
 
@@ -302,7 +398,7 @@ pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<AgileParams>,
         reason: "missing <encryptedKey> in EncryptionInfo XML".to_string(),
     })?;
 
-    Ok(Some(AgileParams {
+    Ok(AgileParams {
         key_bits: kd.key_bits,
         block_size: kd.block_size,
         hash_algorithm: kd.hash_algorithm,
@@ -315,7 +411,187 @@ pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<AgileParams>,
         encrypted_verifier_hash_input: ek.encrypted_verifier_hash_input,
         encrypted_verifier_hash_value: ek.encrypted_verifier_hash_value,
         encrypted_key_value: ek.encrypted_key_value,
-    }))
+    })
+}
+
+// ---------------------------------------------------------------------------
+// RC4 CryptoAPI / Standard AES binary parsing
+// ---------------------------------------------------------------------------
+
+/// Read a u32 LE from data at the given offset.
+fn read_u32(data: &[u8], off: usize) -> Result<u32, FileError> {
+    if data.len() < off + 4 {
+        return Err(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader/Verifier truncated".to_string(),
+        });
+    }
+    Ok(u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]))
+}
+
+/// Parse a CryptoAPI EncryptionHeader + EncryptionVerifier.
+/// Dispatches to Rc4CryptoApi or StandardAes(iterations=0) based on algId.
+fn parse_cryptoapi_info(data: &[u8]) -> Result<Option<EncryptionParams>, FileError> {
+    // headerSize (4 bytes) followed by EncryptionHeader
+    let header_size = read_u32(data, 0)? as usize;
+    let header_end = 4usize.checked_add(header_size).ok_or(FileError::UnsupportedEncryption {
+        reason: "EncryptionHeader size overflow".to_string(),
+    })?;
+    if data.len() < header_end {
+        return Err(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader extends beyond EncryptionInfo".to_string(),
+        });
+    }
+
+    let header_data = &data[4..header_end];
+
+    // EncryptionHeader: flags(4) + sizeExtra(4) + algId(4) + algIdHash(4) + keySize(4) + ...
+    if header_data.len() < 20 {
+        return Err(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader too small".to_string(),
+        });
+    }
+    let alg_id = read_u32(header_data, 8)?;
+    let key_size = read_u32(header_data, 16)?;
+
+    // Verifier data follows the header
+    let verifier_data = &data[header_end..];
+
+    match alg_id {
+        ALGID_RC4 => {
+            let key_size = if key_size == 0 { 40 } else { key_size };
+            if key_size != 40 && key_size != 128 {
+                return Err(FileError::UnsupportedEncryption {
+                    reason: format!("invalid RC4 CryptoAPI key size: {key_size}"),
+                });
+            }
+            let v = parse_encryption_verifier(verifier_data, 20)?;
+            Ok(Some(EncryptionParams::Rc4CryptoApi(Rc4CryptoApiParams {
+                salt: v.salt,
+                encrypted_verifier: v.encrypted_verifier,
+                verifier_hash_size: v.verifier_hash_size,
+                encrypted_verifier_hash: v.encrypted_verifier_hash,
+                key_size,
+            })))
+        }
+        ALGID_AES_128 | ALGID_AES_192 | ALGID_AES_256 => {
+            // NonStandard AES: same binary format as Standard AES but iterations=0
+            let key_size = match alg_id {
+                ALGID_AES_128 => if key_size == 0 { 128 } else { key_size },
+                ALGID_AES_192 => if key_size == 0 { 192 } else { key_size },
+                ALGID_AES_256 => if key_size == 0 { 256 } else { key_size },
+                _ => unreachable!(),
+            };
+            if key_size != 128 && key_size != 192 && key_size != 256 {
+                return Err(FileError::UnsupportedEncryption {
+                    reason: format!("invalid AES key size: {key_size}"),
+                });
+            }
+            parse_standard_aes_info_from_verifier(verifier_data, key_size, 0)
+                .map(|p| Some(EncryptionParams::StandardAes(p)))
+        }
+        _ => Err(FileError::UnsupportedEncryption {
+            reason: format!("unsupported CryptoAPI algorithm ID: 0x{alg_id:04x}"),
+        }),
+    }
+}
+
+/// Parse a Standard AES EncryptionInfo (with headerSize + EncryptionHeader + EncryptionVerifier).
+fn parse_standard_aes_info(data: &[u8], hash_iterations: u32) -> Result<StandardAesParams, FileError> {
+    let header_size = read_u32(data, 0)? as usize;
+    let header_end = 4usize.checked_add(header_size).ok_or(FileError::UnsupportedEncryption {
+        reason: "EncryptionHeader size overflow".to_string(),
+    })?;
+    if data.len() < header_end {
+        return Err(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader extends beyond EncryptionInfo".to_string(),
+        });
+    }
+
+    let header_data = &data[4..header_end];
+    if header_data.len() < 20 {
+        return Err(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader too small".to_string(),
+        });
+    }
+    let alg_id = read_u32(header_data, 8)?;
+    let key_size_raw = read_u32(header_data, 16)?;
+
+    let key_size = match alg_id {
+        ALGID_AES_128 => if key_size_raw == 0 { 128 } else { key_size_raw },
+        ALGID_AES_192 => if key_size_raw == 0 { 192 } else { key_size_raw },
+        ALGID_AES_256 => if key_size_raw == 0 { 256 } else { key_size_raw },
+        _ => return Err(FileError::UnsupportedEncryption {
+            reason: format!("Standard AES: unexpected algId 0x{alg_id:04x}"),
+        }),
+    };
+
+    let verifier_data = &data[header_end..];
+    parse_standard_aes_info_from_verifier(verifier_data, key_size, hash_iterations)
+}
+
+/// Parsed EncryptionVerifier fields.
+struct VerifierFields {
+    salt: [u8; 16],
+    encrypted_verifier: [u8; 16],
+    verifier_hash_size: u32,
+    encrypted_verifier_hash: Vec<u8>,
+}
+
+/// Parse the EncryptionVerifier from binary data.
+fn parse_encryption_verifier(
+    data: &[u8],
+    enc_verifier_hash_len: usize,
+) -> Result<VerifierFields, FileError> {
+    // saltSize(4) + salt(16) + encryptedVerifier(16) + verifierHashSize(4) + encryptedVerifierHash(N)
+    let min_len = 4 + 16 + 16 + 4 + enc_verifier_hash_len;
+    if data.len() < min_len {
+        return Err(FileError::UnsupportedEncryption {
+            reason: "EncryptionVerifier truncated".to_string(),
+        });
+    }
+
+    let salt_size = read_u32(data, 0)?;
+    if salt_size != 16 {
+        return Err(FileError::UnsupportedEncryption {
+            reason: format!("unexpected salt size: {salt_size} (expected 16)"),
+        });
+    }
+
+    let mut salt = [0u8; 16];
+    salt.copy_from_slice(&data[4..20]);
+
+    let mut encrypted_verifier = [0u8; 16];
+    encrypted_verifier.copy_from_slice(&data[20..36]);
+
+    let verifier_hash_size = read_u32(data, 36)?;
+
+    let encrypted_verifier_hash = data[40..40 + enc_verifier_hash_len].to_vec();
+
+    Ok(VerifierFields {
+        salt,
+        encrypted_verifier,
+        verifier_hash_size,
+        encrypted_verifier_hash,
+    })
+}
+
+/// Parse EncryptionVerifier and build StandardAesParams.
+fn parse_standard_aes_info_from_verifier(
+    verifier_data: &[u8],
+    key_size: u32,
+    hash_iterations: u32,
+) -> Result<StandardAesParams, FileError> {
+    // AES encrypted verifier hash is 32 bytes (padded to AES block size)
+    let v = parse_encryption_verifier(verifier_data, 32)?;
+
+    Ok(StandardAesParams {
+        salt: v.salt,
+        encrypted_verifier: v.encrypted_verifier,
+        verifier_hash_size: v.verifier_hash_size,
+        encrypted_verifier_hash: v.encrypted_verifier_hash,
+        key_size,
+        hash_iterations,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +855,300 @@ pub(crate) fn decrypt_page_agile(
 }
 
 // ---------------------------------------------------------------------------
+// RC4 CryptoAPI password verification and page decryption
+// ---------------------------------------------------------------------------
+
+/// Compute block_bytes for page decryption (MS-OFFCRYPTO applyPageNumber).
+/// XORs the encoding key bytes with the little-endian page number.
+/// (jackcessencrypt uses LITTLE_ENDIAN ByteBuffer order)
+fn apply_page_number(encoding_key: &[u8; 4], page: u32) -> [u8; 4] {
+    let page_le = page.to_le_bytes();
+    [
+        encoding_key[0] ^ page_le[0],
+        encoding_key[1] ^ page_le[1],
+        encoding_key[2] ^ page_le[2],
+        encoding_key[3] ^ page_le[3],
+    ]
+}
+
+/// Derive an RC4 CryptoAPI encryption key from base_hash and block_bytes.
+fn derive_rc4_cryptoapi_key(base_hash: &[u8], block_bytes: &[u8], key_size: u32) -> Vec<u8> {
+    let key_byte_size = (key_size / 8) as usize;
+    // enc_key = SHA1(base_hash || block_bytes), truncated to key_byte_size
+    let mut input = Vec::with_capacity(base_hash.len() + block_bytes.len());
+    input.extend_from_slice(base_hash);
+    input.extend_from_slice(block_bytes);
+    let hash = hash_bytes(HashAlgorithm::Sha1, &input);
+
+    let mut enc_key = hash[..key_byte_size.min(hash.len())].to_vec();
+    // For 40-bit keys, zero-pad to 128 bits (16 bytes)
+    if key_size == 40 {
+        enc_key.resize(16, 0);
+    }
+    enc_key
+}
+
+/// Verify a password for RC4 CryptoAPI encryption.
+/// Returns the base_hash on success (used for page decryption).
+pub(crate) fn verify_password_rc4_cryptoapi(
+    params: &Rc4CryptoApiParams,
+    password: &str,
+) -> Result<Zeroizing<Vec<u8>>, FileError> {
+    // base_hash = SHA1(salt + password_utf16le)
+    let password_utf16: Vec<u8> = password
+        .encode_utf16()
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
+
+    let mut salt_pw = Vec::with_capacity(16 + password_utf16.len());
+    salt_pw.extend_from_slice(&params.salt);
+    salt_pw.extend_from_slice(&password_utf16);
+    let base_hash = hash_bytes(HashAlgorithm::Sha1, &salt_pw);
+
+    // Verification uses block_bytes = [0, 0, 0, 0]
+    let enc_key = derive_rc4_cryptoapi_key(&base_hash, &[0u8; 4], params.key_size);
+
+    // Decrypt verifier and verifier_hash with the same RC4 stream
+    let mut combined = Vec::with_capacity(16 + params.encrypted_verifier_hash.len());
+    combined.extend_from_slice(&params.encrypted_verifier);
+    combined.extend_from_slice(&params.encrypted_verifier_hash);
+    rc4_transform(&enc_key, &mut combined);
+
+    let verifier = &combined[..16];
+    let verifier_hash = &combined[16..];
+
+    // Compute SHA1(verifier) and compare with decrypted hash
+    let actual_hash = hash_bytes(HashAlgorithm::Sha1, verifier);
+    let hash_size = params.verifier_hash_size as usize;
+    if hash_size == 0 || hash_size > 20 {
+        return Err(FileError::UnsupportedEncryption {
+            reason: format!("invalid verifier hash size: {hash_size}"),
+        });
+    }
+    let expected = &verifier_hash[..hash_size.min(verifier_hash.len())];
+    let actual = &actual_hash[..hash_size.min(actual_hash.len())];
+
+    if actual.ct_eq(expected).unwrap_u8() != 1 {
+        return Err(FileError::InvalidPassword);
+    }
+
+    Ok(Zeroizing::new(base_hash))
+}
+
+/// Decrypt a data page using RC4 CryptoAPI encryption.
+pub(crate) fn decrypt_page_rc4_cryptoapi(
+    buf: &mut [u8],
+    base_hash: &[u8],
+    encoding_key: &[u8; 4],
+    key_size: u32,
+    page: u32,
+) {
+    if buf.is_empty() {
+        return;
+    }
+    let block_bytes = apply_page_number(encoding_key, page);
+    let enc_key = derive_rc4_cryptoapi_key(base_hash, &block_bytes, key_size);
+    rc4_transform(&enc_key, buf);
+}
+
+// ---------------------------------------------------------------------------
+// Standard AES / NonStandard AES password verification and page decryption
+// ---------------------------------------------------------------------------
+
+/// Iterate hash: H_n = SHA1(n_u32le + H_{n-1}) for n in 0..iterations.
+/// If iterations == 0, returns base_hash unchanged.
+fn iterate_hash_sha1(base_hash: &[u8], iterations: u32) -> Vec<u8> {
+    if iterations == 0 {
+        return base_hash.to_vec();
+    }
+
+    let mut h = base_hash.to_vec();
+    for i in 0..iterations {
+        let mut buf = Vec::with_capacity(4 + h.len());
+        buf.extend_from_slice(&i.to_le_bytes());
+        buf.extend_from_slice(&h);
+        h = hash_bytes(HashAlgorithm::Sha1, &buf);
+    }
+    h
+}
+
+/// Generate XOR-padded bytes for HMAC-like key derivation (MS-OFFCRYPTO §2.3.4.7).
+fn gen_x_bytes(final_hash: &[u8], code: u8) -> [u8; 64] {
+    let mut x = [code; 64];
+    for (i, &b) in final_hash.iter().enumerate() {
+        x[i] ^= b;
+    }
+    x
+}
+
+/// Derive a Standard AES encryption key using cryptDeriveKey (MS-OFFCRYPTO §2.3.4.7).
+fn derive_standard_aes_key(iter_hash: &[u8], block_bytes: &[u8], key_byte_len: usize) -> Vec<u8> {
+    // final_hash = SHA1(iter_hash || block_bytes)
+    let mut buf = Vec::with_capacity(iter_hash.len() + block_bytes.len());
+    buf.extend_from_slice(iter_hash);
+    buf.extend_from_slice(block_bytes);
+    let final_hash = hash_bytes(HashAlgorithm::Sha1, &buf);
+
+    // x1 = SHA1(genXBytes(final_hash, 0x36))
+    let x1 = hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x36));
+    // x2 = SHA1(genXBytes(final_hash, 0x5C))
+    let x2 = hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x5C));
+
+    // enc_key = (x1 || x2)[..key_byte_len]
+    let mut full = Vec::with_capacity(x1.len() + x2.len());
+    full.extend_from_slice(&x1);
+    full.extend_from_slice(&x2);
+    full.truncate(key_byte_len);
+    // Zero-pad if needed (shouldn't happen for AES-128/192/256 with SHA1)
+    full.resize(key_byte_len, 0);
+    full
+}
+
+/// Decrypt data using AES-ECB (used for Standard AES / NonStandard AES).
+fn aes_ecb_decrypt(key: &[u8], data: &[u8]) -> Result<Vec<u8>, FileError> {
+    let block_size = 16;
+    let padded_len = if data.len() % block_size != 0 {
+        (data.len() / block_size + 1) * block_size
+    } else {
+        data.len()
+    };
+    let mut buf = vec![0u8; padded_len];
+    buf[..data.len()].copy_from_slice(data);
+
+    match key.len() {
+        16 => {
+            Aes128EcbDec::new(key.into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-128-ECB decryption failed".to_string(),
+                })?;
+        }
+        24 => {
+            Aes192EcbDec::new(key.into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-192-ECB decryption failed".to_string(),
+                })?;
+        }
+        32 => {
+            Aes256EcbDec::new(key.into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-256-ECB decryption failed".to_string(),
+                })?;
+        }
+        other => {
+            return Err(FileError::UnsupportedEncryption {
+                reason: format!("unsupported AES key size: {other} bytes"),
+            });
+        }
+    }
+
+    Ok(buf)
+}
+
+/// Verify a password for Standard AES / NonStandard AES encryption.
+/// Returns the iter_hash on success (precomputed for page decryption).
+pub(crate) fn verify_password_standard_aes(
+    params: &StandardAesParams,
+    password: &str,
+) -> Result<Zeroizing<Vec<u8>>, FileError> {
+    // base_hash = SHA1(salt + password_utf16le)
+    let password_utf16: Vec<u8> = password
+        .encode_utf16()
+        .flat_map(|c| c.to_le_bytes())
+        .collect();
+
+    let mut salt_pw = Vec::with_capacity(16 + password_utf16.len());
+    salt_pw.extend_from_slice(&params.salt);
+    salt_pw.extend_from_slice(&password_utf16);
+    let base_hash = hash_bytes(HashAlgorithm::Sha1, &salt_pw);
+
+    // Iterate hash
+    let iter_hash = iterate_hash_sha1(&base_hash, params.hash_iterations);
+
+    // Verification uses block_bytes = [0, 0, 0, 0]
+    let key_byte_len = (params.key_size / 8) as usize;
+    let enc_key = derive_standard_aes_key(&iter_hash, &[0u8; 4], key_byte_len);
+
+    // Decrypt verifier and verifier_hash with AES-ECB
+    let verifier = aes_ecb_decrypt(&enc_key, &params.encrypted_verifier)?;
+    let verifier_hash_dec = aes_ecb_decrypt(&enc_key, &params.encrypted_verifier_hash)?;
+
+    // SHA1(verifier) == verifier_hash (truncated to verifier_hash_size)
+    let actual_hash = hash_bytes(HashAlgorithm::Sha1, &verifier);
+    let hash_size = params.verifier_hash_size as usize;
+    if hash_size == 0 || hash_size > 20 {
+        return Err(FileError::UnsupportedEncryption {
+            reason: format!("invalid verifier hash size: {hash_size}"),
+        });
+    }
+    let expected = &verifier_hash_dec[..hash_size.min(verifier_hash_dec.len())];
+    let actual = &actual_hash[..hash_size.min(actual_hash.len())];
+
+    if actual.ct_eq(expected).unwrap_u8() != 1 {
+        return Err(FileError::InvalidPassword);
+    }
+
+    Ok(Zeroizing::new(iter_hash))
+}
+
+/// Decrypt a data page using Standard AES / NonStandard AES (AES-ECB).
+pub(crate) fn decrypt_page_standard_aes(
+    buf: &mut [u8],
+    iter_hash: &[u8],
+    encoding_key: &[u8; 4],
+    key_size: u32,
+    page: u32,
+) -> Result<(), FileError> {
+    if buf.is_empty() {
+        return Ok(());
+    }
+
+    let block_bytes = apply_page_number(encoding_key, page);
+    let key_byte_len = (key_size / 8) as usize;
+    let enc_key = derive_standard_aes_key(iter_hash, &block_bytes, key_byte_len);
+
+    // Decrypt in-place using AES-ECB
+    let aes_block = 16;
+    let decrypt_len = (buf.len() / aes_block) * aes_block;
+    if decrypt_len == 0 {
+        return Ok(());
+    }
+
+    match enc_key.len() {
+        16 => {
+            Aes128EcbDec::new(enc_key[..].into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf[..decrypt_len])
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-128-ECB page decryption failed".to_string(),
+                })?;
+        }
+        24 => {
+            Aes192EcbDec::new(enc_key[..].into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf[..decrypt_len])
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-192-ECB page decryption failed".to_string(),
+                })?;
+        }
+        32 => {
+            Aes256EcbDec::new(enc_key[..].into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf[..decrypt_len])
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-256-ECB page decryption failed".to_string(),
+                })?;
+        }
+        other => {
+            return Err(FileError::UnsupportedEncryption {
+                reason: format!("unsupported AES key size for page decryption: {other} bytes"),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -763,18 +1333,24 @@ mod tests {
         rc4_transform(&HEADER_RC4_KEY, &mut page0[db_header::ENCRYPTED_START..end]);
 
         // Parse EncryptionInfo
-        let params = parse_encryption_info(&page0).unwrap();
-        assert!(params.is_some(), "EncryptionInfo should be present");
-        let params = params.unwrap();
+        let enc_params = parse_encryption_info(&page0).unwrap();
+        assert!(enc_params.is_some(), "EncryptionInfo should be present");
+        let enc_params = enc_params.unwrap();
+
+        // Should be Agile encryption
+        let agile_params = match &enc_params {
+            EncryptionParams::Agile(p) => p,
+            other => panic!("expected Agile, got {other:?}"),
+        };
 
         // Verify correct password
-        let db_key = verify_password(&params, "1234567890");
+        let db_key = verify_password(agile_params, "1234567890");
         assert!(db_key.is_ok(), "correct password should verify: {:?}", db_key.err());
         let db_key = db_key.unwrap();
-        assert_eq!(db_key.len(), params.key_bits / 8);
+        assert_eq!(db_key.len(), agile_params.key_bits / 8);
 
         // Verify incorrect password
-        let result = verify_password(&params, "wrongpassword");
+        let result = verify_password(agile_params, "wrongpassword");
         assert!(matches!(result, Err(FileError::InvalidPassword)));
     }
 
