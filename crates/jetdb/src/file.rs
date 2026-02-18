@@ -286,10 +286,10 @@ impl PageReader {
         let reader = Self::open_raw(path)?;
 
         // Detect Agile Encryption — requires open_with_password() to decrypt
-        if reader.header.version.is_accdb() {
-            if agile::parse_encryption_info(&reader.page0_buf)?.is_some() {
-                return Err(FileError::PasswordRequired);
-            }
+        if reader.header.version.is_accdb()
+            && agile::parse_encryption_info(&reader.page0_buf)?.is_some()
+        {
+            return Err(FileError::PasswordRequired);
         }
 
         Ok(reader)

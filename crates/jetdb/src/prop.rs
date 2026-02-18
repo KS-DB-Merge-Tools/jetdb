@@ -154,8 +154,16 @@ pub(crate) fn parse_lvprop(data: &[u8], is_jet3: bool) -> Result<Vec<PropertyMap
     let mut maps: Vec<PropertyMap> = Vec::new();
 
     while offset + 6 <= data.len() {
-        let chunk_len = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap()) as usize;
-        let chunk_type = u16::from_le_bytes(data[offset + 4..offset + 6].try_into().unwrap());
+        let chunk_len = u32::from_le_bytes(
+            data[offset..offset + 4]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "chunk_len slice mismatch" })?,
+        ) as usize;
+        let chunk_type = u16::from_le_bytes(
+            data[offset + 4..offset + 6]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "chunk_type slice mismatch" })?,
+        );
 
         if chunk_len < 6 {
             return Err(FileError::InvalidProperty {
@@ -194,7 +202,11 @@ fn parse_name_list(chunk_data: &[u8], is_jet3: bool) -> Result<Vec<String>, File
     let mut pos = 0;
 
     while pos + 2 <= chunk_data.len() {
-        let name_len = u16::from_le_bytes(chunk_data[pos..pos + 2].try_into().unwrap()) as usize;
+        let name_len = u16::from_le_bytes(
+            chunk_data[pos..pos + 2]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "name_len slice mismatch" })?,
+        ) as usize;
         pos += 2;
         if pos + name_len > chunk_data.len() {
             break;
@@ -235,11 +247,19 @@ fn parse_value_chunk(
         });
     }
 
-    let name_block_len = u32::from_le_bytes(chunk_data[..4].try_into().unwrap()) as usize;
+    let name_block_len = u32::from_le_bytes(
+        chunk_data[..4]
+            .try_into()
+            .map_err(|_| FileError::InvalidProperty { reason: "name_block_len slice mismatch" })?,
+    ) as usize;
 
     // Extract block name
     let block_name = if name_block_len > 6 && chunk_data.len() >= 6 {
-        let block_name_len = u16::from_le_bytes(chunk_data[4..6].try_into().unwrap()) as usize;
+        let block_name_len = u16::from_le_bytes(
+            chunk_data[4..6]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "block_name_len slice mismatch" })?,
+        ) as usize;
         let name_end = (6 + block_name_len).min(chunk_data.len());
         let name_bytes = &chunk_data[6..name_end];
         if is_jet3 {
@@ -257,17 +277,27 @@ fn parse_value_chunk(
     let mut pos = entries_start;
 
     while pos + 8 <= chunk_data.len() {
-        let val_len = u16::from_le_bytes(chunk_data[pos..pos + 2].try_into().unwrap()) as usize;
+        let val_len = u16::from_le_bytes(
+            chunk_data[pos..pos + 2]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "val_len slice mismatch" })?,
+        ) as usize;
         if val_len < 8 {
             break;
         }
 
         let ddl_flag = chunk_data[pos + 2];
         let data_type = chunk_data[pos + 3];
-        let name_idx =
-            u16::from_le_bytes(chunk_data[pos + 4..pos + 6].try_into().unwrap()) as usize;
-        let data_size =
-            u16::from_le_bytes(chunk_data[pos + 6..pos + 8].try_into().unwrap()) as usize;
+        let name_idx = u16::from_le_bytes(
+            chunk_data[pos + 4..pos + 6]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "name_idx slice mismatch" })?,
+        ) as usize;
+        let data_size = u16::from_le_bytes(
+            chunk_data[pos + 6..pos + 8]
+                .try_into()
+                .map_err(|_| FileError::InvalidProperty { reason: "data_size slice mismatch" })?,
+        ) as usize;
 
         let prop_name = names.get(name_idx).cloned().unwrap_or_default();
 
@@ -325,7 +355,8 @@ fn decode_prop_value(data_type: u8, raw: &[u8], prop_name: &str, is_jet3: bool) 
             if raw.len() < 4 {
                 Value::Null
             } else {
-                Value::Long(i32::from_le_bytes(raw[..4].try_into().unwrap()))
+                let Ok(bytes) = raw[..4].try_into() else { return Value::Null };
+                Value::Long(i32::from_le_bytes(bytes))
             }
         }
         // Money (0x05): 8 bytes LE
@@ -333,7 +364,9 @@ fn decode_prop_value(data_type: u8, raw: &[u8], prop_name: &str, is_jet3: bool) 
             if raw.len() < 8 {
                 Value::Null
             } else {
-                let bytes: [u8; 8] = raw[..8].try_into().unwrap();
+                let Ok(bytes): Result<[u8; 8], _> = raw[..8].try_into() else {
+                    return Value::Null;
+                };
                 Value::Money(money::money_to_string(&bytes))
             }
         }
@@ -342,7 +375,8 @@ fn decode_prop_value(data_type: u8, raw: &[u8], prop_name: &str, is_jet3: bool) 
             if raw.len() < 4 {
                 Value::Null
             } else {
-                Value::Float(f32::from_le_bytes(raw[..4].try_into().unwrap()))
+                let Ok(bytes) = raw[..4].try_into() else { return Value::Null };
+                Value::Float(f32::from_le_bytes(bytes))
             }
         }
         // Double (0x07): 8 bytes LE
@@ -350,7 +384,8 @@ fn decode_prop_value(data_type: u8, raw: &[u8], prop_name: &str, is_jet3: bool) 
             if raw.len() < 8 {
                 Value::Null
             } else {
-                Value::Double(f64::from_le_bytes(raw[..8].try_into().unwrap()))
+                let Ok(bytes) = raw[..8].try_into() else { return Value::Null };
+                Value::Double(f64::from_le_bytes(bytes))
             }
         }
         // Timestamp (0x08): 8 bytes LE f64
@@ -358,7 +393,8 @@ fn decode_prop_value(data_type: u8, raw: &[u8], prop_name: &str, is_jet3: bool) 
             if raw.len() < 8 {
                 Value::Null
             } else {
-                Value::Timestamp(f64::from_le_bytes(raw[..8].try_into().unwrap()))
+                let Ok(bytes) = raw[..8].try_into() else { return Value::Null };
+                Value::Timestamp(f64::from_le_bytes(bytes))
             }
         }
         // Binary (0x09): special case for GUID

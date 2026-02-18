@@ -427,34 +427,39 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::BigInt => {
             if offset + 8 <= data.len() {
-                Value::BigInt(i64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
+                Value::BigInt(i64::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
         }
         ColumnType::Float => {
             if offset + 4 <= data.len() {
-                Value::Float(f32::from_le_bytes(
-                    data[offset..offset + 4].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 4].try_into() else {
+                    return Value::Null;
+                };
+                Value::Float(f32::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
         }
         ColumnType::Double => {
             if offset + 8 <= data.len() {
-                Value::Double(f64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
+                Value::Double(f64::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
         }
         ColumnType::Money => {
             if offset + 8 <= data.len() {
-                let bytes: [u8; 8] = data[offset..offset + 8].try_into().unwrap();
+                let Ok(bytes): Result<[u8; 8], _> = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
                 Value::Money(money::money_to_string(&bytes))
             } else {
                 Value::Null
@@ -462,7 +467,9 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::Numeric => {
             if offset + 17 <= data.len() {
-                let bytes: [u8; 17] = data[offset..offset + 17].try_into().unwrap();
+                let Ok(bytes): Result<[u8; 17], _> = data[offset..offset + 17].try_into() else {
+                    return Value::Null;
+                };
                 Value::Numeric(money::numeric_to_string(&bytes, col.scale))
             } else {
                 Value::Null
@@ -470,9 +477,10 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::Timestamp => {
             if offset + 8 <= data.len() {
-                Value::Timestamp(f64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
+                Value::Timestamp(f64::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
@@ -486,9 +494,10 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::ComplexType => {
             if offset + 4 <= data.len() {
-                Value::Long(i32::from_le_bytes(
-                    data[offset..offset + 4].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 4].try_into() else {
+                    return Value::Null;
+                };
+                Value::Long(i32::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
@@ -546,31 +555,41 @@ fn read_variable_value(
             Value::Int(i16::from_le_bytes([var_data[0], var_data[1]]))
         }
         ColumnType::Long if var_data.len() >= 4 => {
-            Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
+            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            Value::Long(i32::from_le_bytes(bytes))
         }
         ColumnType::BigInt if var_data.len() >= 8 => {
-            Value::BigInt(i64::from_le_bytes(var_data[..8].try_into().unwrap()))
+            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            Value::BigInt(i64::from_le_bytes(bytes))
         }
         ColumnType::Float if var_data.len() >= 4 => {
-            Value::Float(f32::from_le_bytes(var_data[..4].try_into().unwrap()))
+            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            Value::Float(f32::from_le_bytes(bytes))
         }
         ColumnType::Double if var_data.len() >= 8 => {
-            Value::Double(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
+            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            Value::Double(f64::from_le_bytes(bytes))
         }
         ColumnType::Money if var_data.len() >= 8 => {
-            let bytes: [u8; 8] = var_data[..8].try_into().unwrap();
+            let Ok(bytes): Result<[u8; 8], _> = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::Money(money::money_to_string(&bytes))
         }
         ColumnType::Numeric if var_data.len() >= 17 => {
-            let bytes: [u8; 17] = var_data[..17].try_into().unwrap();
+            let Ok(bytes): Result<[u8; 17], _> = var_data[..17].try_into() else {
+                return Value::Null;
+            };
             Value::Numeric(money::numeric_to_string(&bytes, col.scale))
         }
         ColumnType::Timestamp if var_data.len() >= 8 => {
-            Value::Timestamp(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
+            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            Value::Timestamp(f64::from_le_bytes(bytes))
         }
         ColumnType::Guid if var_data.len() >= 16 => Value::Guid(format_guid(&var_data[..16])),
         ColumnType::ComplexType if var_data.len() >= 4 => {
-            Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
+            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            Value::Long(i32::from_le_bytes(bytes))
         }
         _ => Value::Null,
     }
@@ -611,7 +630,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
     if var_data.len() < 4 {
         return None;
     }
-    let length_with_flags = u32::from_le_bytes(var_data[..4].try_into().unwrap());
+    let length_with_flags = u32::from_le_bytes(var_data[..4].try_into().ok()?);
     let memo_type = length_with_flags & LVAL_TYPE_MASK;
     let data_len = (length_with_flags & !LVAL_TYPE_MASK) as usize;
 
@@ -629,7 +648,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
         if var_data.len() < 8 {
             return None;
         }
-        let pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
+        let pg_row = u32::from_le_bytes(var_data[4..8].try_into().ok()?);
         reader.read_pg_row(pg_row).ok()
     } else if memo_type == LVAL_MULTI_PAGE {
         // Multi-page overflow: chain of LVAL page rows
@@ -637,7 +656,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
         if var_data.len() < 8 {
             return None;
         }
-        let mut pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
+        let mut pg_row = u32::from_le_bytes(var_data[4..8].try_into().ok()?);
         let mut buf = Vec::with_capacity(data_len.min(MAX_LVAL_INITIAL_CAP));
         let mut visited = HashSet::new();
 
@@ -649,7 +668,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
             if row_data.len() < 4 {
                 return None;
             }
-            let next_pg_row = u32::from_le_bytes(row_data[..4].try_into().unwrap());
+            let next_pg_row = u32::from_le_bytes(row_data[..4].try_into().ok()?);
             buf.extend_from_slice(&row_data[4..]);
             pg_row = next_pg_row;
 
