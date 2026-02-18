@@ -1,3 +1,4 @@
 [workspace]
 members = ["crates/jetdb", "crates/jetdb-cli"]
+exclude = ["crates/complexity-filter"]
 resolver = "2"

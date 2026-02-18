@@ -175,8 +175,8 @@ pub fn format_binary(data: &[u8], mode: BinMode) -> String {
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub fn cmd_export(args: ExportArgs) -> ExitCode {
-    match run_export(&args) {
+pub fn cmd_export(args: ExportArgs, password: Option<&str>) -> ExitCode {
+    match run_export(&args, password) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             log::error!("{e}");
@@ -185,7 +185,7 @@ pub fn cmd_export(args: ExportArgs) -> ExitCode {
     }
 }
 
-fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
+fn run_export(args: &ExportArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
     let delimiter = args.delimiter.chars().next().unwrap_or(',');
     if args.delimiter.chars().count() > 1 {
         log::warn!("only the first character of delimiter is used");
@@ -199,7 +199,7 @@ fn run_export(args: &ExportArgs) -> Result<(), jetdb::FileError> {
         boolean_words: args.boolean_words,
     };
 
-    let mut reader = PageReader::open(&args.file)?;
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
     let catalog = read_catalog(&mut reader)?;
 
     let entry = catalog

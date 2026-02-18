@@ -1,6 +1,6 @@
 [package]
 name = "jetdb"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust library for reading Microsoft Access (.mdb/.accdb) files"
@@ -9,10 +9,18 @@ documentation = "https://docs.rs/jetdb"
 readme = "../../README.md"
 keywords = ["access", "mdb", "accdb", "jet", "database"]
 categories = ["database", "parser-implementations"]
-rust-version = "1.82"
+rust-version = "1.85"
 exclude = ["testdata/", "AGENTS*", "CLAUDE*", ".claude/"]
 
 [dependencies]
+aes = "0.8"
+base64 = "0.22"
+cbc = "0.1"
 cfb = "0.14"
 log = "0.4"
 ovba = "0.7"
+sha1 = "0.10"
+sha2 = "0.10"
+quick-xml = "0.37"
+subtle = "2.6"
+zeroize = "1.8"

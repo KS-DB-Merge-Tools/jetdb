@@ -48,3 +48,15 @@ CLI docs exist in both English (`docs/cli.md`) and Japanese (`docs/cli.ja.md`). 
 ## Conventions
 
 - Commit messages in English
+
+## Quality Check
+
+Run the code quality check before submitting changes:
+
+```bash
+scripts/quality-check.sh
+```
+
+This script runs all checks defined in `docs/ci.md` in sequence (test → clippy → audit → doc → coverage → complexity). Always use this script instead of running checks manually or writing inline scripts.
+
+See `docs/ci.md` for details on individual tools and installation instructions.

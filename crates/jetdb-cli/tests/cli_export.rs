@@ -219,6 +219,25 @@ fn export_system_columns() {
 }
 
 // ---------------------------------------------------------------------------
+// Encrypted .accdb — no password
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_encrypted_no_password() {
+    let path = skip_if_missing!("enc_vbaV2007.accdb");
+    let output = jetdb_bin()
+        .args(["export", path.to_str().unwrap(), "SomeTable"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("password-protected"),
+        "stderr should mention password-protected, got: {stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Error: nonexistent file
 // ---------------------------------------------------------------------------
 

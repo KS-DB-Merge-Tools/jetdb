@@ -99,18 +99,22 @@ pub fn read_table_rows(reader: &mut PageReader, table: &TableDef) -> Result<Read
             if row_ptr & row::DELETE_FLAG != 0 {
                 continue;
             }
-            // Skip overflow/lookup rows (multi-page rows not yet supported)
-            if row_ptr & row::LOOKUP_FLAG != 0 {
-                log::debug!("skipping overflow row on page {page_num} row {row_idx}");
-                skipped_rows += 1;
-                continue;
-            }
+            // Lookup/overflow rows: the row was relocated to this page from
+            // another page, or this is a stale pointer to a row that was
+            // moved away. If find_row succeeds, the data at the offset is
+            // valid row data to be read normally. Stale entries where
+            // find_row fails are skipped (not counted as errors).
+            let is_lookup = row_ptr & row::LOOKUP_FLAG != 0;
 
             let (start, size) = match find_row(format, &page_data, page_num, row_idx) {
                 Ok(v) => v,
                 Err(e) => {
-                    log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
-                    skipped_rows += 1;
+                    if is_lookup {
+                        log::debug!("skipping stale lookup row on page {page_num} row {row_idx}: {e}");
+                    } else {
+                        log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
+                        skipped_rows += 1;
+                    }
                     continue;
                 }
             };
@@ -423,34 +427,39 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::BigInt => {
             if offset + 8 <= data.len() {
-                Value::BigInt(i64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
+                Value::BigInt(i64::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
         }
         ColumnType::Float => {
             if offset + 4 <= data.len() {
-                Value::Float(f32::from_le_bytes(
-                    data[offset..offset + 4].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 4].try_into() else {
+                    return Value::Null;
+                };
+                Value::Float(f32::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
         }
         ColumnType::Double => {
             if offset + 8 <= data.len() {
-                Value::Double(f64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
+                Value::Double(f64::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
         }
         ColumnType::Money => {
             if offset + 8 <= data.len() {
-                let bytes: [u8; 8] = data[offset..offset + 8].try_into().unwrap();
+                let Ok(bytes): Result<[u8; 8], _> = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
                 Value::Money(money::money_to_string(&bytes))
             } else {
                 Value::Null
@@ -458,7 +467,9 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::Numeric => {
             if offset + 17 <= data.len() {
-                let bytes: [u8; 17] = data[offset..offset + 17].try_into().unwrap();
+                let Ok(bytes): Result<[u8; 17], _> = data[offset..offset + 17].try_into() else {
+                    return Value::Null;
+                };
                 Value::Numeric(money::numeric_to_string(&bytes, col.scale))
             } else {
                 Value::Null
@@ -466,9 +477,10 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::Timestamp => {
             if offset + 8 <= data.len() {
-                Value::Timestamp(f64::from_le_bytes(
-                    data[offset..offset + 8].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 8].try_into() else {
+                    return Value::Null;
+                };
+                Value::Timestamp(f64::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
@@ -482,9 +494,10 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
         }
         ColumnType::ComplexType => {
             if offset + 4 <= data.len() {
-                Value::Long(i32::from_le_bytes(
-                    data[offset..offset + 4].try_into().unwrap(),
-                ))
+                let Ok(bytes) = data[offset..offset + 4].try_into() else {
+                    return Value::Null;
+                };
+                Value::Long(i32::from_le_bytes(bytes))
             } else {
                 Value::Null
             }
@@ -542,31 +555,41 @@ fn read_variable_value(
             Value::Int(i16::from_le_bytes([var_data[0], var_data[1]]))
         }
         ColumnType::Long if var_data.len() >= 4 => {
-            Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
+            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            Value::Long(i32::from_le_bytes(bytes))
         }
         ColumnType::BigInt if var_data.len() >= 8 => {
-            Value::BigInt(i64::from_le_bytes(var_data[..8].try_into().unwrap()))
+            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            Value::BigInt(i64::from_le_bytes(bytes))
         }
         ColumnType::Float if var_data.len() >= 4 => {
-            Value::Float(f32::from_le_bytes(var_data[..4].try_into().unwrap()))
+            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            Value::Float(f32::from_le_bytes(bytes))
         }
         ColumnType::Double if var_data.len() >= 8 => {
-            Value::Double(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
+            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            Value::Double(f64::from_le_bytes(bytes))
         }
         ColumnType::Money if var_data.len() >= 8 => {
-            let bytes: [u8; 8] = var_data[..8].try_into().unwrap();
+            let Ok(bytes): Result<[u8; 8], _> = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::Money(money::money_to_string(&bytes))
         }
         ColumnType::Numeric if var_data.len() >= 17 => {
-            let bytes: [u8; 17] = var_data[..17].try_into().unwrap();
+            let Ok(bytes): Result<[u8; 17], _> = var_data[..17].try_into() else {
+                return Value::Null;
+            };
             Value::Numeric(money::numeric_to_string(&bytes, col.scale))
         }
         ColumnType::Timestamp if var_data.len() >= 8 => {
-            Value::Timestamp(f64::from_le_bytes(var_data[..8].try_into().unwrap()))
+            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            Value::Timestamp(f64::from_le_bytes(bytes))
         }
         ColumnType::Guid if var_data.len() >= 16 => Value::Guid(format_guid(&var_data[..16])),
         ColumnType::ComplexType if var_data.len() >= 4 => {
-            Value::Long(i32::from_le_bytes(var_data[..4].try_into().unwrap()))
+            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            Value::Long(i32::from_le_bytes(bytes))
         }
         _ => Value::Null,
     }
@@ -607,7 +630,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
     if var_data.len() < 4 {
         return None;
     }
-    let length_with_flags = u32::from_le_bytes(var_data[..4].try_into().unwrap());
+    let length_with_flags = u32::from_le_bytes(var_data[..4].try_into().ok()?);
     let memo_type = length_with_flags & LVAL_TYPE_MASK;
     let data_len = (length_with_flags & !LVAL_TYPE_MASK) as usize;
 
@@ -625,7 +648,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
         if var_data.len() < 8 {
             return None;
         }
-        let pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
+        let pg_row = u32::from_le_bytes(var_data[4..8].try_into().ok()?);
         reader.read_pg_row(pg_row).ok()
     } else if memo_type == LVAL_MULTI_PAGE {
         // Multi-page overflow: chain of LVAL page rows
@@ -633,7 +656,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
         if var_data.len() < 8 {
             return None;
         }
-        let mut pg_row = u32::from_le_bytes(var_data[4..8].try_into().unwrap());
+        let mut pg_row = u32::from_le_bytes(var_data[4..8].try_into().ok()?);
         let mut buf = Vec::with_capacity(data_len.min(MAX_LVAL_INITIAL_CAP));
         let mut visited = HashSet::new();
 
@@ -645,7 +668,7 @@ fn read_lval_data(var_data: &[u8], reader: Option<&mut PageReader>) -> Option<Ve
             if row_data.len() < 4 {
                 return None;
             }
-            let next_pg_row = u32::from_le_bytes(row_data[..4].try_into().unwrap());
+            let next_pg_row = u32::from_le_bytes(row_data[..4].try_into().ok()?);
             buf.extend_from_slice(&row_data[4..]);
             pg_row = next_pg_row;
 
@@ -1894,5 +1917,46 @@ mod tests {
         let cracked = crack_row_jet4(&row_data).unwrap();
         let col = make_col_def(ColumnType::Text, 255);
         assert_eq!(read_fixed_value(&cracked, &col, false), Value::Null);
+    }
+
+    // -- Overflow (LOOKUP_FLAG) rows ------------------------------------------
+
+    #[test]
+    fn overflow_row_msysaccessstorage() {
+        let path = skip_if_missing!("overflow_enc_vbaV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "MSysAccessStorage")
+            .expect("MSysAccessStorage entry in catalog");
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert_eq!(result.skipped_rows, 0, "no rows should be skipped");
+        assert!(
+            result.rows.len() >= 10,
+            "MSysAccessStorage should have at least 10 rows, got {}",
+            result.rows.len()
+        );
+
+        // Verify that a /VBA/dir-like entry exists (Name column should contain VBA paths)
+        let name_idx = table
+            .columns
+            .iter()
+            .position(|c| c.name == "Name")
+            .expect("Name column");
+        let names: Vec<&str> = result
+            .rows
+            .iter()
+            .filter_map(|row| match &row[name_idx] {
+                Value::Text(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            names.iter().any(|n| n.contains("dir")),
+            "Expected a VBA dir entry among: {names:?}"
+        );
     }
 }

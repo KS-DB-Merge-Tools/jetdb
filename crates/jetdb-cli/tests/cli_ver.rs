@@ -111,6 +111,22 @@ fn ver_jet4_long_short_flag() {
 }
 
 // ---------------------------------------------------------------------------
+// Encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ver_encrypted_accdb() {
+    let path = skip_if_missing!("enc_vbaV2007.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "1234567890", "ver", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), "ACE14");
+}
+
+// ---------------------------------------------------------------------------
 // Error cases
 // ---------------------------------------------------------------------------
 
