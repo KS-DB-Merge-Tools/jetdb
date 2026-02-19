@@ -127,7 +127,8 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 ## Acknowledgments
 
 - [mdbtools](https://github.com/mdbtools/mdbtools) — [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) was an invaluable reference for understanding the MDB/ACCDB file format
-- [Jackcess](https://github.com/spannm/jackcess) (Apache License 2.0) — most test .mdb/.accdb files are sourced from this project (some were created independently)
+- [Jackcess](https://github.com/spannm/jackcess) (Apache License 2.0) — most test .mdb/.accdb files are sourced from this project (some were created independently). See [testdata/SOURCES.md](testdata/SOURCES.md) for details.
+- [jackcessencrypt](https://github.com/spannm/jackcessencrypt) (Apache License 2.0) — encryption-related test files are sourced from this Jackcess plugin
 - [MS-OFFCRYPTO](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/) — Microsoft's specification for Office document encryption, used as a reference for implementing Agile Encryption support
 
 ## License

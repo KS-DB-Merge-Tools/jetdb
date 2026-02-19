@@ -127,7 +127,8 @@ fn main() -> Result<(), jetdb::FileError> {
 ## 謝辞
 
 - MDB/ACCDB ファイルフォーマットの理解にあたって [mdbtools](https://github.com/mdbtools/mdbtools) の [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) を大いに参考にしました
-- テスト用の .mdb / .accdb ファイルは大部分を [Jackcess](https://github.com/spannm/jackcess)（Apache License 2.0）から利用しています（一部は本プロジェクトで独自に作成）
+- テスト用の .mdb / .accdb ファイルは大部分を [Jackcess](https://github.com/spannm/jackcess)（Apache License 2.0）から利用しています（一部は本プロジェクトで独自に作成）。詳細は [testdata/SOURCES.md](testdata/SOURCES.md) を参照
+- 暗号化関連のテストファイルは [jackcessencrypt](https://github.com/spannm/jackcessencrypt)（Apache License 2.0、Jackcess の暗号化プラグイン）から利用しています
 - Agile Encryption の実装にあたり [MS-OFFCRYPTO](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/)（Microsoft の Office ドキュメント暗号化仕様）を参考にしました
 
 ## ライセンス
