@@ -219,6 +219,84 @@ fn export_system_columns() {
 }
 
 // ---------------------------------------------------------------------------
+// RC4 CryptoAPI encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_rc4_cryptoapi() {
+    let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "Test123",
+            "export",
+            path.to_str().unwrap(),
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("foo"), "output should contain 'foo'");
+}
+
+// ---------------------------------------------------------------------------
+// NonStandard AES encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_nonstandard_aes() {
+    let path = skip_if_missing!("db-nonstandard-aes.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "password",
+            "export",
+            path.to_str().unwrap(),
+            "Table_One",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("test"), "output should contain 'test'");
+}
+
+// ---------------------------------------------------------------------------
+// Agile encrypted .accdb (db2007-enc)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_agile_db2007() {
+    let path = skip_if_missing!("db2007-enc.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "Test123",
+            "export",
+            path.to_str().unwrap(),
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("foo"), "output should contain 'foo'");
+}
+
+// ---------------------------------------------------------------------------
 // Encrypted .accdb — no password
 // ---------------------------------------------------------------------------
 

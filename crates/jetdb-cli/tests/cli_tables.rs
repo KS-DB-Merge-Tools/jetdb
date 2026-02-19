@@ -217,6 +217,75 @@ fn tables_encrypted_no_password() {
 }
 
 // ---------------------------------------------------------------------------
+// RC4 CryptoAPI encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_rc4_cryptoapi() {
+    let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "Test123", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with RC4 CryptoAPI encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "should list at least one user table"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// NonStandard AES encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_nonstandard_aes() {
+    let path = skip_if_missing!("db-nonstandard-aes.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "password", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with NonStandard AES encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "should list at least one user table"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Agile encrypted .accdb (db2007-enc)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_agile_db2007() {
+    let path = skip_if_missing!("db2007-enc.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "Test123", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with Agile encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "should list at least one user table"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Error: nonexistent file
 // ---------------------------------------------------------------------------
 

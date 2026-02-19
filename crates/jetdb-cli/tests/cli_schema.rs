@@ -354,6 +354,62 @@ fn schema_ace12() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// RC4 CryptoAPI encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn schema_rc4_cryptoapi() {
+    let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "Test123",
+            "schema",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with RC4 CryptoAPI encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Table:"),
+        "should contain at least one Table: header, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// NonStandard AES encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn schema_nonstandard_aes() {
+    let path = skip_if_missing!("db-nonstandard-aes.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "password",
+            "schema",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with NonStandard AES encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Table:"),
+        "should contain at least one Table: header, got:\n{stdout}"
+    );
+}
+
 // ===========================================================================
 // DDL output tests
 // ===========================================================================

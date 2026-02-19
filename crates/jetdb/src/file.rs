@@ -1080,6 +1080,102 @@ mod tests {
     }
 
     #[test]
+    fn agile_read_table_enc_vba() {
+        use crate::format::ObjectType;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("enc_vbaV2007.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("1234567890"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        // Read a user table to verify data decryption works
+        let user_tables: Vec<_> = catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
+            })
+            .collect();
+        assert!(!user_tables.is_empty(), "should have user tables");
+
+        let entry = &user_tables[0];
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert!(!result.rows.is_empty(), "should have at least one row");
+    }
+
+    #[test]
+    fn agile_read_table_db2007() {
+        use crate::data::Value;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("db2007-enc.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("Test123"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "Table1")
+            .expect("Table1 should exist");
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+
+        assert_eq!(result.rows.len(), 1);
+        assert!(matches!(&result.rows[0][0], Value::Long(1)));
+        assert!(matches!(&result.rows[0][1], Value::Text(s) if s == "foo"));
+    }
+
+    #[test]
+    fn agile_read_table_db2013() {
+        use crate::data::Value;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("db2013-enc.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("1234"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "Customers")
+            .expect("Customers should exist");
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+
+        assert_eq!(result.rows.len(), 7);
+        let expected_field1 = [
+            Some("Test"),
+            Some("Test2"),
+            Some("a"),
+            None,
+            Some("c"),
+            Some("d"),
+            Some("f"),
+        ];
+        for (i, expected) in expected_field1.iter().enumerate() {
+            match expected {
+                Some(val) => {
+                    assert!(
+                        matches!(&result.rows[i][1], Value::Text(s) if s == val),
+                        "row {i}: expected Field1={val:?}, got {:?}",
+                        &result.rows[i][1]
+                    );
+                }
+                None => {
+                    assert!(
+                        matches!(&result.rows[i][1], Value::Null),
+                        "row {i}: expected NULL, got {:?}",
+                        &result.rows[i][1]
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn open_with_password_mdb_ignores_password() {
         let path = skip_if_missing!("V2003/testV2003.mdb");
         // .mdb files should not use Agile Encryption
@@ -1112,6 +1208,76 @@ mod tests {
             .expect("should open RC4 encrypted .mdb");
         assert!(reader.encryption.is_none());
         assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn jet_rc4_read_table_v2000() {
+        use crate::format::ObjectType;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("enc_vbaV2000.mdb");
+        let mut reader = PageReader::open(&path).expect("should open RC4 encrypted .mdb");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        // Read a user table (filter by ObjectType::Table)
+        let user_tables: Vec<_> = catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
+            })
+            .collect();
+        assert!(!user_tables.is_empty(), "should have user tables");
+
+        let entry = &user_tables[0];
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert!(!result.rows.is_empty(), "should have at least one row");
+    }
+
+    #[test]
+    fn jet_rc4_read_table_v2003() {
+        use crate::format::ObjectType;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("enc_vbaV2003.mdb");
+        let mut reader = PageReader::open(&path).expect("should open RC4 encrypted .mdb");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        let user_tables: Vec<_> = catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
+            })
+            .collect();
+        assert!(!user_tables.is_empty(), "should have user tables");
+
+        let entry = &user_tables[0];
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert!(!result.rows.is_empty(), "should have at least one row");
+    }
+
+    #[test]
+    fn jet_rc4_read_overflow_v2003() {
+        use crate::read_catalog;
+        let path = skip_if_missing!("overflow_enc_vbaV2003.mdb");
+        let mut reader = PageReader::open(&path).expect("should open RC4 encrypted .mdb");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        // Verify system tables with overflow data can be read
+        let msys_storage = catalog
+            .iter()
+            .find(|e| e.name == "MSysAccessStorage");
+        assert!(
+            msys_storage.is_some(),
+            "MSysAccessStorage should exist in overflow test file"
+        );
     }
 
     // -- RC4 CryptoAPI Encryption tests ---------------------------------------

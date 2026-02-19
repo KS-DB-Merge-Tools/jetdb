@@ -134,16 +134,18 @@ Files have been renamed from the upstream naming convention (e.g. `common1VYYYY`
 
 ## jackcessencrypt
 
-Source: https://github.com/spannm/jackcessencrypt
+Source: https://github.com/jahlborn/jackcessencrypt
 License: Apache License 2.0
-Path in upstream: `src/test/resources/data/`
+Path in upstream: `src/test/data/`
 
-Encryption-related test files. Files have been renamed for clarity about the encryption type.
+Encryption-related test files. Some files have been renamed for clarity about the encryption type.
 
 | File | Upstream file |
 |------|--------------|
 | db2007-rc4cryptoapi.accdb | db2007-oldenc.accdb |
 | db-nonstandard-aes.accdb | db-nonstandard.accdb |
+| db2007-enc.accdb | db2007-enc.accdb |
+| db2013-enc.accdb | db2013-enc.accdb |
 
 ## Created independently
 
