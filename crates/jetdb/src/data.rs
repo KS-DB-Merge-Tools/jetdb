@@ -38,6 +38,11 @@ pub enum Value {
     /// GUID: `"{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}"` format.
     Guid(String),
     /// DateTimeExtended: ISO 8601 string (e.g. `"2021-06-14 22:45:12.3456789"`).
+    ///
+    /// Stored as `String` because:
+    /// - f64 cannot represent 100-nanosecond precision without loss.
+    /// - strftime has no nanosecond directive, so `--datetime-format` cannot
+    ///   be applied even with a structured representation.
     DateTimeExtended(String),
 }
 
@@ -1960,6 +1965,50 @@ mod tests {
         buf[41] = 0x00;
         let result = parse_ext_datetime(&buf);
         assert_eq!(result, Some("2021-06-14 12:45:00".to_string()));
+    }
+
+    #[test]
+    fn parse_ext_datetime_buffer_too_short() {
+        // 41 bytes (one short of required 42)
+        let buf = [b'0'; 41];
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_ext_datetime_all_zeros() {
+        // All ASCII '0' → days=0, secs=0, nanos=0 → epoch 0001-01-01
+        let mut buf = [b'0'; 42];
+        buf[19] = b':';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        let result = parse_ext_datetime(&buf);
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("0001-01-01"));
+    }
+
+    #[test]
+    fn parse_ext_datetime_non_utf8() {
+        // Invalid UTF-8 bytes in the days field
+        let mut buf = [0xFFu8; 42];
+        buf[19] = b':';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_ext_datetime_non_digit() {
+        // Non-digit ASCII chars → parse fails → unwrap_or(0) → epoch
+        let mut buf = [b'x'; 42];
+        buf[19] = b':';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        let result = parse_ext_datetime(&buf);
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("0001-01-01"));
     }
 
     #[test]

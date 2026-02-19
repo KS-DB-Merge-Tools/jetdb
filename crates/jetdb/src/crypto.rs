@@ -17,6 +17,7 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+type Aes192CbcDec = cbc::Decryptor<aes::Aes192>;
 type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
 type Aes128EcbDec = ecb::Decryptor<aes::Aes128>;
 type Aes192EcbDec = ecb::Decryptor<aes::Aes192>;
@@ -613,36 +614,38 @@ fn derive_key(
     key_bits: usize,
 ) -> Zeroizing<Vec<u8>> {
     // H0 = hash(salt + password_utf16le)
-    let password_utf16: Vec<u8> = password
-        .encode_utf16()
-        .flat_map(|c| c.to_le_bytes())
-        .collect();
+    let password_utf16: Zeroizing<Vec<u8>> = Zeroizing::new(
+        password
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect(),
+    );
 
     let mut buf = Vec::with_capacity(salt.len() + password_utf16.len());
     buf.extend_from_slice(salt);
     buf.extend_from_slice(&password_utf16);
-    let mut h = hash_bytes(hash_algo, &buf);
+    let mut h = Zeroizing::new(hash_bytes(hash_algo, &buf));
 
     // Hn = hash(n_u32le + H_{n-1})
     for n in 0..spin_count {
         let mut iter_buf = Vec::with_capacity(4 + h.len());
         iter_buf.extend_from_slice(&n.to_le_bytes());
         iter_buf.extend_from_slice(&h);
-        h = hash_bytes(hash_algo, &iter_buf);
+        h = Zeroizing::new(hash_bytes(hash_algo, &iter_buf));
     }
 
     // Hfinal = hash(H_last + blockKey)
     let mut final_buf = Vec::with_capacity(h.len() + block_key.len());
     final_buf.extend_from_slice(&h);
     final_buf.extend_from_slice(block_key);
-    let h_final = hash_bytes(hash_algo, &final_buf);
+    let h_final = Zeroizing::new(hash_bytes(hash_algo, &final_buf));
 
     // Pad or truncate to key_bits / 8
     let key_len = key_bits / 8;
     if h_final.len() >= key_len {
         Zeroizing::new(h_final[..key_len].to_vec())
     } else {
-        let mut padded = h_final;
+        let mut padded = h_final.to_vec();
         padded.resize(key_len, HASH_PAD_BYTE);
         Zeroizing::new(padded)
     }
@@ -679,6 +682,15 @@ fn aes_cbc_decrypt(key: &[u8], iv: &[u8], data: &[u8]) -> Result<Vec<u8>, FileEr
                 .decrypt_padded_mut::<NoPadding>(&mut buf)
                 .map_err(|_| FileError::UnsupportedEncryption {
                     reason: "AES-128-CBC decryption failed".to_string(),
+                })?;
+        }
+        24 => {
+            let mut key24 = [0u8; 24];
+            key24.copy_from_slice(key);
+            Aes192CbcDec::new(&key24.into(), &iv16.into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-192-CBC decryption failed".to_string(),
                 })?;
         }
         32 => {
@@ -745,15 +757,18 @@ pub(crate) fn verify_password(
     let iv = make_iv(salt, params.pe_block_size);
 
     // Decrypt verifierHashInput
-    let verifier = aes_cbc_decrypt(&key_input, &iv, &params.encrypted_verifier_hash_input)?;
+    let verifier = Zeroizing::new(
+        aes_cbc_decrypt(&key_input, &iv, &params.encrypted_verifier_hash_input)?,
+    );
 
     // Decrypt verifierHashValue
-    let expected_hash_full =
-        aes_cbc_decrypt(&key_hash_value, &iv, &params.encrypted_verifier_hash_value)?;
+    let expected_hash_full = Zeroizing::new(
+        aes_cbc_decrypt(&key_hash_value, &iv, &params.encrypted_verifier_hash_value)?,
+    );
 
     // Verify: hash(verifier) == expected_hash (truncated to hash size)
     let hash_size = algo.hash_size();
-    let actual_hash = hash_bytes(algo, &verifier);
+    let actual_hash = Zeroizing::new(hash_bytes(algo, &verifier));
 
     let expected_hash = if expected_hash_full.len() >= hash_size {
         &expected_hash_full[..hash_size]
@@ -766,7 +781,9 @@ pub(crate) fn verify_password(
     }
 
     // Decrypt the database key
-    let db_key = aes_cbc_decrypt(&key_enc_key, &iv, &params.encrypted_key_value)?;
+    let db_key = Zeroizing::new(
+        aes_cbc_decrypt(&key_enc_key, &iv, &params.encrypted_key_value)?,
+    );
 
     // Truncate to keyData keyBits / 8
     let db_key_len = params.key_bits / 8;
@@ -835,6 +852,15 @@ pub(crate) fn decrypt_page_agile(
                     reason: "AES-128-CBC page decryption failed".to_string(),
                 })?;
         }
+        24 => {
+            let mut key24 = [0u8; 24];
+            key24.copy_from_slice(db_key);
+            Aes192CbcDec::new(&key24.into(), &iv16.into())
+                .decrypt_padded_mut::<NoPadding>(&mut buf[..decrypt_len])
+                .map_err(|_| FileError::UnsupportedEncryption {
+                    reason: "AES-192-CBC page decryption failed".to_string(),
+                })?;
+        }
         32 => {
             let mut key32 = [0u8; 32];
             key32.copy_from_slice(db_key);
@@ -895,15 +921,17 @@ pub(crate) fn verify_password_rc4_cryptoapi(
     password: &str,
 ) -> Result<Zeroizing<Vec<u8>>, FileError> {
     // base_hash = SHA1(salt + password_utf16le)
-    let password_utf16: Vec<u8> = password
-        .encode_utf16()
-        .flat_map(|c| c.to_le_bytes())
-        .collect();
+    let password_utf16: Zeroizing<Vec<u8>> = Zeroizing::new(
+        password
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect(),
+    );
 
     let mut salt_pw = Vec::with_capacity(16 + password_utf16.len());
     salt_pw.extend_from_slice(&params.salt);
     salt_pw.extend_from_slice(&password_utf16);
-    let base_hash = hash_bytes(HashAlgorithm::Sha1, &salt_pw);
+    let base_hash = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &salt_pw));
 
     // Verification uses block_bytes = [0, 0, 0, 0]
     let enc_key = derive_rc4_cryptoapi_key(&base_hash, &[0u8; 4], params.key_size);
@@ -932,7 +960,7 @@ pub(crate) fn verify_password_rc4_cryptoapi(
         return Err(FileError::InvalidPassword);
     }
 
-    Ok(Zeroizing::new(base_hash))
+    Ok(base_hash)
 }
 
 /// Decrypt a data page using RC4 CryptoAPI encryption.
@@ -962,14 +990,14 @@ fn iterate_hash_sha1(base_hash: &[u8], iterations: u32) -> Vec<u8> {
         return base_hash.to_vec();
     }
 
-    let mut h = base_hash.to_vec();
+    let mut h = Zeroizing::new(base_hash.to_vec());
     for i in 0..iterations {
         let mut buf = Vec::with_capacity(4 + h.len());
         buf.extend_from_slice(&i.to_le_bytes());
         buf.extend_from_slice(&h);
-        h = hash_bytes(HashAlgorithm::Sha1, &buf);
+        h = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &buf));
     }
-    h
+    h.to_vec()
 }
 
 /// Generate XOR-padded bytes for HMAC-like key derivation (MS-OFFCRYPTO §2.3.4.7).
@@ -987,12 +1015,12 @@ fn derive_standard_aes_key(iter_hash: &[u8], block_bytes: &[u8], key_byte_len: u
     let mut buf = Vec::with_capacity(iter_hash.len() + block_bytes.len());
     buf.extend_from_slice(iter_hash);
     buf.extend_from_slice(block_bytes);
-    let final_hash = hash_bytes(HashAlgorithm::Sha1, &buf);
+    let final_hash = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &buf));
 
     // x1 = SHA1(genXBytes(final_hash, 0x36))
-    let x1 = hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x36));
+    let x1 = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x36)));
     // x2 = SHA1(genXBytes(final_hash, 0x5C))
-    let x2 = hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x5C));
+    let x2 = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x5C)));
 
     // enc_key = (x1 || x2)[..key_byte_len]
     let mut full = Vec::with_capacity(x1.len() + x2.len());
@@ -1054,18 +1082,20 @@ pub(crate) fn verify_password_standard_aes(
     password: &str,
 ) -> Result<Zeroizing<Vec<u8>>, FileError> {
     // base_hash = SHA1(salt + password_utf16le)
-    let password_utf16: Vec<u8> = password
-        .encode_utf16()
-        .flat_map(|c| c.to_le_bytes())
-        .collect();
+    let password_utf16: Zeroizing<Vec<u8>> = Zeroizing::new(
+        password
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect(),
+    );
 
     let mut salt_pw = Vec::with_capacity(16 + password_utf16.len());
     salt_pw.extend_from_slice(&params.salt);
     salt_pw.extend_from_slice(&password_utf16);
-    let base_hash = hash_bytes(HashAlgorithm::Sha1, &salt_pw);
+    let base_hash = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &salt_pw));
 
     // Iterate hash
-    let iter_hash = iterate_hash_sha1(&base_hash, params.hash_iterations);
+    let iter_hash = Zeroizing::new(iterate_hash_sha1(&base_hash, params.hash_iterations));
 
     // Verification uses block_bytes = [0, 0, 0, 0]
     let key_byte_len = (params.key_size / 8) as usize;
@@ -1090,7 +1120,7 @@ pub(crate) fn verify_password_standard_aes(
         return Err(FileError::InvalidPassword);
     }
 
-    Ok(Zeroizing::new(iter_hash))
+    Ok(iter_hash)
 }
 
 /// Decrypt a data page using Standard AES / NonStandard AES (AES-ECB).
@@ -1418,6 +1448,11 @@ mod tests {
         let result = verify_password_standard_aes(params, "WrongPassword");
         assert!(matches!(result, Err(FileError::InvalidPassword)));
     }
+
+    // NOTE: No Standard AES test (hash_iterations > 0) because we lack test data —
+    // Access/Office-encrypted files with iterations>0 are not publicly available.
+    // The NonStandard AES test above covers the shared code path; the only
+    // difference is iterate_hash_sha1 looping (vs. returning base_hash unchanged).
 
     // -- Validation tests (synthetic data) ------------------------------------
 

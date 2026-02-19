@@ -1,34 +1,6 @@
-use std::path::PathBuf;
-use std::process::Command;
-
-/// Resolve the path to a test data file, returning `None` if missing.
-fn test_data_path(relative: &str) -> Option<PathBuf> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = PathBuf::from(manifest_dir)
-        .join("../../testdata")
-        .join(relative);
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
-}
-
-macro_rules! skip_if_missing {
-    ($path:expr) => {
-        match test_data_path($path) {
-            Some(p) => p,
-            None => {
-                eprintln!("SKIP: test data not found: {}", $path);
-                return;
-            }
-        }
-    };
-}
-
-fn jetdb_bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_jetdb"))
-}
+#[macro_use]
+mod common;
+use common::jetdb_bin;
 
 // ---------------------------------------------------------------------------
 // Normal case: prop Table1
