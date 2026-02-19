@@ -7,6 +7,7 @@ use crate::file::{find_row, FileError, PageReader};
 use crate::format::{row, ColumnType};
 use crate::money;
 use crate::table::{ColumnDef, TableDef};
+use crate::timestamp;
 
 /// Maximum initial capacity for LVAL multi-page buffer (16 MB).
 const MAX_LVAL_INITIAL_CAP: usize = 16 * 1024 * 1024;
@@ -36,6 +37,13 @@ pub enum Value {
     Timestamp(f64),
     /// GUID: `"{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}"` format.
     Guid(String),
+    /// DateTimeExtended: ISO 8601 string (e.g. `"2021-06-14 22:45:12.3456789"`).
+    ///
+    /// Stored as `String` because:
+    /// - f64 cannot represent 100-nanosecond precision without loss.
+    /// - strftime has no nanosecond directive, so `--datetime-format` cannot
+    ///   be applied even with a structured representation.
+    DateTimeExtended(String),
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +510,16 @@ fn read_fixed_value(cracked: &CrackedRow<'_>, col: &ColumnDef, is_jet3: bool) ->
                 Value::Null
             }
         }
+        ColumnType::DateTimeExtended => {
+            if offset + 42 <= data.len() {
+                match parse_ext_datetime(&data[offset..offset + 42]) {
+                    Some(s) => Value::DateTimeExtended(s),
+                    None => Value::Binary(data[offset..offset + 42].to_vec()),
+                }
+            } else {
+                Value::Null
+            }
+        }
         // Unknown fixed-size types: read as raw binary
         ColumnType::Unknown(_) => {
             let size = col.col_size as usize;
@@ -590,6 +608,12 @@ fn read_variable_value(
         ColumnType::ComplexType if var_data.len() >= 4 => {
             let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
             Value::Long(i32::from_le_bytes(bytes))
+        }
+        ColumnType::DateTimeExtended if var_data.len() >= 42 => {
+            match parse_ext_datetime(&var_data[..42]) {
+                Some(s) => Value::DateTimeExtended(s),
+                None => Value::Binary(var_data.to_vec()),
+            }
         }
         _ => Value::Null,
     }
@@ -706,6 +730,28 @@ fn read_ole_value(var_data: &[u8], reader: Option<&mut PageReader>) -> Value {
         Some(data) => Value::Binary(data),
         None => Value::Null,
     }
+}
+
+// ---------------------------------------------------------------------------
+// DateTimeExtended parsing
+// ---------------------------------------------------------------------------
+
+/// Parse 42-byte ASCII DateTimeExtended into an ISO 8601 string.
+///
+/// Layout: `[days:19][':'][seconds:12][nanos100:7][':']['7'][0x00]`
+fn parse_ext_datetime(buf: &[u8]) -> Option<String> {
+    if buf.len() < 42 {
+        return None;
+    }
+    let days_str = std::str::from_utf8(&buf[0..19]).ok()?;
+    let secs_str = std::str::from_utf8(&buf[20..32]).ok()?;
+    let nanos_str = std::str::from_utf8(&buf[32..39]).ok()?;
+
+    let days: i64 = days_str.trim_start_matches('0').parse().unwrap_or(0);
+    let seconds: i64 = secs_str.trim_start_matches('0').parse().unwrap_or(0);
+    let nanos100: i64 = nanos_str.trim_start_matches('0').parse().unwrap_or(0);
+
+    Some(timestamp::format_ext_datetime(days, seconds, nanos100))
 }
 
 // ---------------------------------------------------------------------------
@@ -1906,6 +1952,76 @@ mod tests {
         var_data.extend_from_slice(&flags.to_le_bytes());
         var_data.extend_from_slice(&[0x00, 0x00, 0x00]); // only 3 more bytes
         assert_eq!(read_lval_data(&var_data, None), None);
+    }
+
+    // -- parse_ext_datetime / read_fixed_value DateTimeExtended ---------------
+
+    #[test]
+    fn parse_ext_datetime_with_time() {
+        // days=737954 (2021-06-14), secs=45900 (12:45:00), nanos=0
+        let mut buf = [0u8; 42];
+        let s = b"0000000000000737954:000000045900000000000:7";
+        buf[..42].copy_from_slice(&s[..42]);
+        buf[41] = 0x00;
+        let result = parse_ext_datetime(&buf);
+        assert_eq!(result, Some("2021-06-14 12:45:00".to_string()));
+    }
+
+    #[test]
+    fn parse_ext_datetime_buffer_too_short() {
+        // 41 bytes (one short of required 42)
+        let buf = [b'0'; 41];
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_ext_datetime_all_zeros() {
+        // All ASCII '0' → days=0, secs=0, nanos=0 → epoch 0001-01-01
+        let mut buf = [b'0'; 42];
+        buf[19] = b':';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        let result = parse_ext_datetime(&buf);
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("0001-01-01"));
+    }
+
+    #[test]
+    fn parse_ext_datetime_non_utf8() {
+        // Invalid UTF-8 bytes in the days field
+        let mut buf = [0xFFu8; 42];
+        buf[19] = b':';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_ext_datetime_non_digit() {
+        // Non-digit ASCII chars → parse fails → unwrap_or(0) → epoch
+        let mut buf = [b'x'; 42];
+        buf[19] = b':';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        let result = parse_ext_datetime(&buf);
+        assert!(result.is_some());
+        assert!(result.unwrap().starts_with("0001-01-01"));
+    }
+
+    #[test]
+    fn read_fixed_datetime_extended() {
+        // Build a 42-byte ASCII payload for 2020-06-17 (date only)
+        let ascii = b"0000000000000737592:000000000000000000000:7\x00";
+        let row_data = make_jet4_row_with_fixed(&ascii[..42]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let col = make_col_def(ColumnType::DateTimeExtended, 42);
+        assert_eq!(
+            read_fixed_value(&cracked, &col, false),
+            Value::DateTimeExtended("2020-06-17".to_string())
+        );
     }
 
     // -- read_fixed_value variable-length type fallback -----------------------

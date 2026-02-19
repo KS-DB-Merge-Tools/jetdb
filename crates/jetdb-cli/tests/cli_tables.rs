@@ -1,34 +1,6 @@
-use std::path::PathBuf;
-use std::process::Command;
-
-/// Resolve the path to a test data file, returning `None` if missing.
-fn test_data_path(relative: &str) -> Option<PathBuf> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = PathBuf::from(manifest_dir)
-        .join("../../testdata")
-        .join(relative);
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
-}
-
-macro_rules! skip_if_missing {
-    ($path:expr) => {
-        match test_data_path($path) {
-            Some(p) => p,
-            None => {
-                eprintln!("SKIP: test data not found: {}", $path);
-                return;
-            }
-        }
-    };
-}
-
-fn jetdb_bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_jetdb"))
-}
+#[macro_use]
+mod common;
+use common::jetdb_bin;
 
 // ---------------------------------------------------------------------------
 // Default output (no flags)
@@ -213,6 +185,75 @@ fn tables_encrypted_no_password() {
     assert!(
         stderr.contains("password-protected"),
         "stderr should mention password-protected, got: {stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// RC4 CryptoAPI encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_rc4_cryptoapi() {
+    let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "Test123", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with RC4 CryptoAPI encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "should list at least one user table"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// NonStandard AES encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_nonstandard_aes() {
+    let path = skip_if_missing!("db-nonstandard-aes.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "password", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with NonStandard AES encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "should list at least one user table"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Agile encrypted .accdb (db2007-enc)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_agile_db2007() {
+    let path = skip_if_missing!("db2007-enc.accdb");
+    let output = jetdb_bin()
+        .args(["--password", "Test123", "tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed with Agile encrypted file, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.trim().is_empty(),
+        "should list at least one user table"
     );
 }
 

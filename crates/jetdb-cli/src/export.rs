@@ -146,6 +146,7 @@ pub fn format_value(value: &Value, opts: &FormatOptions) -> String {
                 timestamp::format_timestamp(*ts, &opts.datetime_format)
             }
         }
+        Value::DateTimeExtended(s) => csv_escape(s, opts.delimiter, true),
     }
 }
 

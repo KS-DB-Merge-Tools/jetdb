@@ -1,34 +1,6 @@
-use std::path::PathBuf;
-use std::process::Command;
-
-/// Resolve the path to a test data file, returning `None` if missing.
-fn test_data_path(relative: &str) -> Option<PathBuf> {
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = PathBuf::from(manifest_dir)
-        .join("../../testdata")
-        .join(relative);
-    if path.exists() {
-        Some(path)
-    } else {
-        None
-    }
-}
-
-macro_rules! skip_if_missing {
-    ($path:expr) => {
-        match test_data_path($path) {
-            Some(p) => p,
-            None => {
-                eprintln!("SKIP: test data not found: {}", $path);
-                return;
-            }
-        }
-    };
-}
-
-fn jetdb_bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_jetdb"))
-}
+#[macro_use]
+mod common;
+use common::jetdb_bin;
 
 // ---------------------------------------------------------------------------
 // Basic export
@@ -219,6 +191,84 @@ fn export_system_columns() {
 }
 
 // ---------------------------------------------------------------------------
+// RC4 CryptoAPI encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_rc4_cryptoapi() {
+    let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "Test123",
+            "export",
+            path.to_str().unwrap(),
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("foo"), "output should contain 'foo'");
+}
+
+// ---------------------------------------------------------------------------
+// NonStandard AES encrypted .accdb
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_nonstandard_aes() {
+    let path = skip_if_missing!("db-nonstandard-aes.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "password",
+            "export",
+            path.to_str().unwrap(),
+            "Table_One",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("test"), "output should contain 'test'");
+}
+
+// ---------------------------------------------------------------------------
+// Agile encrypted .accdb (db2007-enc)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_agile_db2007() {
+    let path = skip_if_missing!("db2007-enc.accdb");
+    let output = jetdb_bin()
+        .args([
+            "--password",
+            "Test123",
+            "export",
+            path.to_str().unwrap(),
+            "Table1",
+        ])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("foo"), "output should contain 'foo'");
+}
+
+// ---------------------------------------------------------------------------
 // Encrypted .accdb — no password
 // ---------------------------------------------------------------------------
 
@@ -370,5 +420,39 @@ fn export_ace14() {
     assert!(
         stdout.lines().count() > 1,
         "should have header + data rows for ACE14"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// DateTimeExtended (ACE17/V2019)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_datetime_extended() {
+    let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+    let output = jetdb_bin()
+        .args(["export", path.to_str().unwrap(), "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() > 1,
+        "should have header + data rows, got:\n{stdout}"
+    );
+    // Verify date-only value (row 1): "2020-06-17"
+    assert!(
+        stdout.contains("2020-06-17"),
+        "should contain date-only value 2020-06-17, got:\n{stdout}"
+    );
+    // Verify full precision value: "2021-06-14 22:45:12.3456789"
+    assert!(
+        stdout.contains("2021-06-14 22:45:12.3456789"),
+        "should contain full precision datetime, got:\n{stdout}"
     );
 }

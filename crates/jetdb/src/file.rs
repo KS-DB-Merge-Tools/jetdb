@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use crate::agile::{self, AgileParams};
+use crate::crypto::{self, EncryptionParams};
 use crate::format::{db_header, row, FormatError, JetFormat, JetVersion};
 use zeroize::Zeroizing;
 
@@ -256,10 +256,22 @@ pub fn find_row(
 // PageReader
 // ---------------------------------------------------------------------------
 
-/// Internal state for Agile Encryption.
-struct AgileState {
-    params: AgileParams,
-    db_key: Zeroizing<Vec<u8>>,
+/// Internal encryption state, established after successful password verification.
+enum EncryptionState {
+    Agile {
+        params: crypto::AgileParams,
+        db_key: Zeroizing<Vec<u8>>,
+    },
+    Rc4CryptoApi {
+        key_size: u32,
+        base_hash: Zeroizing<Vec<u8>>,
+        encoding_key: [u8; 4],
+    },
+    StandardAes {
+        key_size: u32,
+        iter_hash: Zeroizing<Vec<u8>>,
+        encoding_key: [u8; 4],
+    },
 }
 
 /// Page-level reader for Jet/ACE database files.
@@ -273,7 +285,7 @@ pub struct PageReader {
     page0_buf: Vec<u8>,
     page_buf: Vec<u8>,
     cached_page: Option<u32>,
-    agile: Option<AgileState>,
+    encryption: Option<EncryptionState>,
 }
 
 impl PageReader {
@@ -285,9 +297,9 @@ impl PageReader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, FileError> {
         let reader = Self::open_raw(path)?;
 
-        // Detect Agile Encryption — requires open_with_password() to decrypt
+        // Detect encryption — requires open_with_password() to decrypt
         if reader.header.version.is_accdb()
-            && agile::parse_encryption_info(&reader.page0_buf)?.is_some()
+            && crypto::parse_encryption_info(&reader.page0_buf)?.is_some()
         {
             return Err(FileError::PasswordRequired);
         }
@@ -297,23 +309,23 @@ impl PageReader {
 
     /// Open a database file with an optional password.
     ///
-    /// If the file uses Agile Encryption (.accdb with password protection),
-    /// the password is required to decrypt the database contents.
-    /// For non-encrypted files, the password is ignored.
+    /// If the file uses Office encryption (Agile, RC4 CryptoAPI, Standard/NonStandard AES)
+    /// (.accdb with password protection), the password is required to decrypt
+    /// the database contents. For non-encrypted files, the password is ignored.
     pub fn open_with_password(
         path: impl AsRef<Path>,
         password: Option<&str>,
     ) -> Result<Self, FileError> {
         let mut reader = Self::open_raw(path)?;
 
-        // Only .accdb files can have Agile Encryption
+        // Only .accdb files can have encryption beyond Jet RC4
         if !reader.header.version.is_accdb() {
             return Ok(reader);
         }
 
         // Check for EncryptionInfo on page 0
-        let agile_params = agile::parse_encryption_info(&reader.page0_buf)?;
-        let agile_params = match agile_params {
+        let enc_params = crypto::parse_encryption_info(&reader.page0_buf)?;
+        let enc_params = match enc_params {
             Some(p) => p,
             None => return Ok(reader),
         };
@@ -321,32 +333,71 @@ impl PageReader {
         // Password is required
         let password = password.ok_or(FileError::PasswordRequired)?;
 
-        // Verify password and get the database key
-        let db_key = agile::verify_password(&agile_params, password)?;
+        let encoding_key = reader.header.db_key.to_le_bytes();
 
-        // Re-decrypt page 0 with AES-CBC
-        // Page 0 needs to be re-read and decrypted with AES
-        // First, re-read the raw page 0
+        // Verify password and establish encryption state
+        let enc_state = match &enc_params {
+            EncryptionParams::Agile(params) => {
+                let db_key = crypto::verify_password(params, password)?;
+                EncryptionState::Agile {
+                    params: params.clone(),
+                    db_key,
+                }
+            }
+            EncryptionParams::Rc4CryptoApi(params) => {
+                let base_hash = crypto::verify_password_rc4_cryptoapi(params, password)?;
+                EncryptionState::Rc4CryptoApi {
+                    key_size: params.key_size,
+                    base_hash,
+                    encoding_key,
+                }
+            }
+            EncryptionParams::StandardAes(params) => {
+                let iter_hash = crypto::verify_password_standard_aes(params, password)?;
+                EncryptionState::StandardAes {
+                    key_size: params.key_size,
+                    iter_hash,
+                    encoding_key,
+                }
+            }
+        };
+
+        // Re-read and re-decrypt page 0 with the correct encryption
         reader.file.seek(SeekFrom::Start(0))?;
         reader.file.read_exact(&mut reader.page0_buf)?;
-
-        // Apply RC4 header decryption first (same as open_raw())
         decrypt_header(&mut reader.page0_buf, reader.header.version);
 
-        // Now apply Agile page decryption to page 0
-        agile::decrypt_page_agile(
-            &mut reader.page0_buf,
-            &agile_params,
-            &db_key,
-            reader.header.db_key,
-            0,
-        )?;
+        match &enc_state {
+            EncryptionState::Agile { params, db_key } => {
+                crypto::decrypt_page_agile(
+                    &mut reader.page0_buf,
+                    params,
+                    db_key,
+                    reader.header.db_key,
+                    0,
+                )?;
+            }
+            EncryptionState::Rc4CryptoApi { base_hash, key_size, encoding_key } => {
+                crypto::decrypt_page_rc4_cryptoapi(
+                    &mut reader.page0_buf,
+                    base_hash,
+                    encoding_key,
+                    *key_size,
+                    0,
+                );
+            }
+            EncryptionState::StandardAes { iter_hash, key_size, encoding_key } => {
+                crypto::decrypt_page_standard_aes(
+                    &mut reader.page0_buf,
+                    iter_hash,
+                    encoding_key,
+                    *key_size,
+                    0,
+                )?;
+            }
+        }
 
-        reader.agile = Some(AgileState {
-            params: agile_params,
-            db_key,
-        });
-
+        reader.encryption = Some(enc_state);
         Ok(reader)
     }
 
@@ -424,7 +475,7 @@ impl PageReader {
             page0_buf,
             page_buf,
             cached_page: None,
-            agile: None,
+            encryption: None,
         })
     }
 
@@ -466,16 +517,37 @@ impl PageReader {
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.read_exact(&mut self.page_buf)?;
 
-        if let Some(ref agile_state) = self.agile {
-            agile::decrypt_page_agile(
-                &mut self.page_buf,
-                &agile_state.params,
-                &agile_state.db_key,
-                self.header.db_key,
-                page,
-            )?;
-        } else {
-            decrypt_page(&mut self.page_buf, self.header.db_key, page);
+        match &self.encryption {
+            Some(EncryptionState::Agile { params, db_key }) => {
+                crypto::decrypt_page_agile(
+                    &mut self.page_buf,
+                    params,
+                    db_key,
+                    self.header.db_key,
+                    page,
+                )?;
+            }
+            Some(EncryptionState::Rc4CryptoApi { base_hash, key_size, encoding_key }) => {
+                crypto::decrypt_page_rc4_cryptoapi(
+                    &mut self.page_buf,
+                    base_hash,
+                    encoding_key,
+                    *key_size,
+                    page,
+                );
+            }
+            Some(EncryptionState::StandardAes { iter_hash, key_size, encoding_key }) => {
+                crypto::decrypt_page_standard_aes(
+                    &mut self.page_buf,
+                    iter_hash,
+                    encoding_key,
+                    *key_size,
+                    page,
+                )?;
+            }
+            None => {
+                decrypt_page(&mut self.page_buf, self.header.db_key, page);
+            }
         }
 
         self.cached_page = Some(page);
@@ -512,7 +584,7 @@ impl fmt::Debug for PageReader {
             .field("page_size", &self.header.format.page_size)
             .field("page_count", &self.page_count())
             .field("file_size", &self.file_size)
-            .field("agile_encrypted", &self.agile.is_some())
+            .field("encrypted", &self.encryption.is_some())
             .finish()
     }
 }
@@ -974,14 +1046,14 @@ mod tests {
         // Non-encrypted file: password is ignored
         let reader =
             PageReader::open_with_password(&path, Some("anything")).expect("should open fine");
-        assert!(reader.agile.is_none());
+        assert!(reader.encryption.is_none());
     }
 
     #[test]
     fn open_with_password_non_encrypted_no_password() {
         let path = skip_if_missing!("V2007/testV2007.accdb");
         let reader = PageReader::open_with_password(&path, None).expect("should open fine");
-        assert!(reader.agile.is_none());
+        assert!(reader.encryption.is_none());
     }
 
     #[test]
@@ -1003,8 +1075,104 @@ mod tests {
         let path = skip_if_missing!("enc_vbaV2007.accdb");
         let reader = PageReader::open_with_password(&path, Some("1234567890"))
             .expect("should open with correct password");
-        assert!(reader.agile.is_some());
+        assert!(reader.encryption.is_some());
         assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn agile_read_table_enc_vba() {
+        use crate::format::ObjectType;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("enc_vbaV2007.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("1234567890"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        // Read a user table to verify data decryption works
+        let user_tables: Vec<_> = catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
+            })
+            .collect();
+        assert!(!user_tables.is_empty(), "should have user tables");
+
+        let entry = &user_tables[0];
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert!(!result.rows.is_empty(), "should have at least one row");
+    }
+
+    #[test]
+    fn agile_read_table_db2007() {
+        use crate::data::Value;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("db2007-enc.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("Test123"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "Table1")
+            .expect("Table1 should exist");
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+
+        assert_eq!(result.rows.len(), 1);
+        assert!(matches!(&result.rows[0][0], Value::Long(1)));
+        assert!(matches!(&result.rows[0][1], Value::Text(s) if s == "foo"));
+    }
+
+    #[test]
+    fn agile_read_table_db2013() {
+        use crate::data::Value;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("db2013-enc.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("1234"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "Customers")
+            .expect("Customers should exist");
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+
+        assert_eq!(result.rows.len(), 7);
+        let expected_field1 = [
+            Some("Test"),
+            Some("Test2"),
+            Some("a"),
+            None,
+            Some("c"),
+            Some("d"),
+            Some("f"),
+        ];
+        for (i, expected) in expected_field1.iter().enumerate() {
+            match expected {
+                Some(val) => {
+                    assert!(
+                        matches!(&result.rows[i][1], Value::Text(s) if s == val),
+                        "row {i}: expected Field1={val:?}, got {:?}",
+                        &result.rows[i][1]
+                    );
+                }
+                None => {
+                    assert!(
+                        matches!(&result.rows[i][1], Value::Null),
+                        "row {i}: expected NULL, got {:?}",
+                        &result.rows[i][1]
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -1013,7 +1181,7 @@ mod tests {
         // .mdb files should not use Agile Encryption
         let reader =
             PageReader::open_with_password(&path, Some("anything")).expect("should open fine");
-        assert!(reader.agile.is_none());
+        assert!(reader.encryption.is_none());
     }
 
     #[test]
@@ -1029,7 +1197,7 @@ mod tests {
         // RC4 encrypted .mdb: open_with_password should work (password ignored for .mdb)
         let reader = PageReader::open_with_password(&path, None)
             .expect("should open RC4 encrypted .mdb");
-        assert!(reader.agile.is_none());
+        assert!(reader.encryption.is_none());
         assert!(reader.page_count() > 0);
     }
 
@@ -1038,7 +1206,197 @@ mod tests {
         let path = skip_if_missing!("enc_vbaV2003.mdb");
         let reader = PageReader::open_with_password(&path, None)
             .expect("should open RC4 encrypted .mdb");
-        assert!(reader.agile.is_none());
+        assert!(reader.encryption.is_none());
         assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn jet_rc4_read_table_v2000() {
+        use crate::format::ObjectType;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("enc_vbaV2000.mdb");
+        let mut reader = PageReader::open(&path).expect("should open RC4 encrypted .mdb");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        // Read a user table (filter by ObjectType::Table)
+        let user_tables: Vec<_> = catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
+            })
+            .collect();
+        assert!(!user_tables.is_empty(), "should have user tables");
+
+        let entry = &user_tables[0];
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert!(!result.rows.is_empty(), "should have at least one row");
+    }
+
+    #[test]
+    fn jet_rc4_read_table_v2003() {
+        use crate::format::ObjectType;
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("enc_vbaV2003.mdb");
+        let mut reader = PageReader::open(&path).expect("should open RC4 encrypted .mdb");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        let user_tables: Vec<_> = catalog
+            .iter()
+            .filter(|e| {
+                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
+            })
+            .collect();
+        assert!(!user_tables.is_empty(), "should have user tables");
+
+        let entry = &user_tables[0];
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert!(!result.rows.is_empty(), "should have at least one row");
+    }
+
+    #[test]
+    fn jet_rc4_read_overflow_v2003() {
+        use crate::read_catalog;
+        let path = skip_if_missing!("overflow_enc_vbaV2003.mdb");
+        let mut reader = PageReader::open(&path).expect("should open RC4 encrypted .mdb");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        assert!(!catalog.is_empty(), "catalog should not be empty");
+
+        // Verify system tables with overflow data can be read
+        let msys_storage = catalog
+            .iter()
+            .find(|e| e.name == "MSysAccessStorage");
+        assert!(
+            msys_storage.is_some(),
+            "MSysAccessStorage should exist in overflow test file"
+        );
+    }
+
+    // -- RC4 CryptoAPI Encryption tests ---------------------------------------
+
+    #[test]
+    fn rc4_cryptoapi_password_required() {
+        let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+        let err = PageReader::open(&path).unwrap_err();
+        assert!(matches!(err, FileError::PasswordRequired));
+    }
+
+    #[test]
+    fn rc4_cryptoapi_wrong_password() {
+        let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+        let err = PageReader::open_with_password(&path, Some("WrongPassword")).unwrap_err();
+        assert!(matches!(err, FileError::InvalidPassword));
+    }
+
+    #[test]
+    fn rc4_cryptoapi_no_password() {
+        let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+        let err = PageReader::open_with_password(&path, None).unwrap_err();
+        assert!(matches!(err, FileError::PasswordRequired));
+    }
+
+    #[test]
+    fn rc4_cryptoapi_correct_password() {
+        let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+        let reader = PageReader::open_with_password(&path, Some("Test123"))
+            .expect("should open with correct password");
+        assert!(reader.encryption.is_some());
+        assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn rc4_cryptoapi_read_table() {
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("Test123"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        let table_names: Vec<&str> = catalog.iter().map(|e| e.name.as_str()).collect();
+        assert!(table_names.contains(&"Table1"), "Table1 should exist");
+
+        let entry = catalog.iter().find(|e| e.name == "Table1").unwrap();
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        assert_eq!(tdef.name, "Table1");
+
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].len(), 2);
+
+        // ID=1, Field1="foo"
+        use crate::data::Value;
+        assert!(matches!(&result.rows[0][0], Value::Long(1)));
+        assert!(matches!(&result.rows[0][1], Value::Text(s) if s == "foo"));
+    }
+
+    // -- NonStandard AES Encryption tests -------------------------------------
+
+    #[test]
+    fn nonstandard_aes_password_required() {
+        let path = skip_if_missing!("db-nonstandard-aes.accdb");
+        let err = PageReader::open(&path).unwrap_err();
+        assert!(matches!(err, FileError::PasswordRequired));
+    }
+
+    #[test]
+    fn nonstandard_aes_wrong_password() {
+        let path = skip_if_missing!("db-nonstandard-aes.accdb");
+        let err = PageReader::open_with_password(&path, Some("WrongPassword")).unwrap_err();
+        assert!(matches!(err, FileError::InvalidPassword));
+    }
+
+    #[test]
+    fn nonstandard_aes_no_password() {
+        let path = skip_if_missing!("db-nonstandard-aes.accdb");
+        let err = PageReader::open_with_password(&path, None).unwrap_err();
+        assert!(matches!(err, FileError::PasswordRequired));
+    }
+
+    #[test]
+    fn nonstandard_aes_correct_password() {
+        let path = skip_if_missing!("db-nonstandard-aes.accdb");
+        let reader = PageReader::open_with_password(&path, Some("password"))
+            .expect("should open with correct password");
+        assert!(reader.encryption.is_some());
+        assert!(reader.page_count() > 0);
+    }
+
+    #[test]
+    fn nonstandard_aes_read_table() {
+        use crate::{read_catalog, read_table_def, read_table_rows};
+        let path = skip_if_missing!("db-nonstandard-aes.accdb");
+        let mut reader = PageReader::open_with_password(&path, Some("password"))
+            .expect("should open with correct password");
+
+        let catalog = read_catalog(&mut reader).expect("should read catalog");
+        let table_names: Vec<&str> = catalog.iter().map(|e| e.name.as_str()).collect();
+        assert!(table_names.contains(&"Table_One"), "Table_One should exist");
+
+        let entry = catalog.iter().find(|e| e.name == "Table_One").unwrap();
+        let tdef = read_table_def(&mut reader, &entry.name, entry.table_page)
+            .expect("should read table def");
+        assert_eq!(tdef.name, "Table_One");
+
+        // Verify ID column exists
+        let col_names: Vec<&str> = tdef.columns.iter().map(|c| c.name.as_str()).collect();
+        assert!(col_names.contains(&"ID"), "ID column should exist");
+
+        let result = read_table_rows(&mut reader, &tdef).expect("should read rows");
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0].len(), 2);
+
+        // ID=1, Field1="test"
+        use crate::data::Value;
+        assert!(matches!(&result.rows[0][0], Value::Long(1)));
+        assert!(matches!(&result.rows[0][1], Value::Text(s) if s == "test"));
     }
 }

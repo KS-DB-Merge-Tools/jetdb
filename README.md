@@ -113,7 +113,7 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 - Recover SQL from saved queries
 - Extract VBA module source code
 - Read object properties (LvProp)
-- Decrypt RC4-encrypted databases and password-protected .accdb files (Agile Encryption)
+- Decrypt RC4-encrypted databases and password-protected .accdb files (Agile, RC4 CryptoAPI, Standard/NonStandard AES)
 - Handle Jet3 (Latin-1) and Jet4+ (UTF-16LE, compressed text) encodings
 
 ## Limitations
@@ -121,14 +121,15 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 - Read-only (no write support)
 - No index-based lookups (full table scan only)
 - Loads all rows into memory; be mindful of memory usage with very large tables
-- Password-protected .accdb files require `PageReader::open_with_password` (Agile Encryption)
+- Password-protected .accdb files require `PageReader::open_with_password` (Agile, RC4 CryptoAPI, Standard/NonStandard AES)
 - Replication databases (.mda) are untested
 
 ## Acknowledgments
 
 - [mdbtools](https://github.com/mdbtools/mdbtools) — [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) was an invaluable reference for understanding the MDB/ACCDB file format
-- [Jackcess](https://github.com/spannm/jackcess) (Apache License 2.0) — most test .mdb/.accdb files are sourced from this project (some were created independently)
-- [MS-OFFCRYPTO](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/) — Microsoft's specification for Office document encryption, used as a reference for implementing Agile Encryption support
+- [Jackcess](https://github.com/spannm/jackcess) (Apache License 2.0) — most test .mdb/.accdb files are sourced from this project (some were created independently). See [testdata/SOURCES.md](testdata/SOURCES.md) for details.
+- [jackcessencrypt](https://github.com/jahlborn/jackcessencrypt) (Apache License 2.0) — encryption-related test files are sourced from this Jackcess plugin
+- [MS-OFFCRYPTO](https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-offcrypto/) — Microsoft's specification for Office document encryption, used as a reference for implementing encryption support
 
 ## License
 
