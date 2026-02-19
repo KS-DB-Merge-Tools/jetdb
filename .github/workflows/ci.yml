@@ -32,9 +32,18 @@ jobs:
       - uses: taiki-e/install-action@cargo-audit
       - run: cargo audit
 
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.85
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+
   test:
     name: Test (${{ matrix.os }})
-    needs: [clippy, audit]
+    needs: [clippy, audit, msrv]
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
