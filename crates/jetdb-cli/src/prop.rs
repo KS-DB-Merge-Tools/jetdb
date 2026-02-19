@@ -106,6 +106,7 @@ fn format_value(value: &Value) -> String {
             }
         }
         Value::Guid(s) => s.clone(),
+        Value::DateTimeExtended(s) => s.clone(),
     }
 }
 

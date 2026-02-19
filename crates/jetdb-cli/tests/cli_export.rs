@@ -372,3 +372,37 @@ fn export_ace14() {
         "should have header + data rows for ACE14"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DateTimeExtended (ACE17/V2019)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_datetime_extended() {
+    let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+    let output = jetdb_bin()
+        .args(["export", path.to_str().unwrap(), "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() > 1,
+        "should have header + data rows, got:\n{stdout}"
+    );
+    // Verify date-only value (row 1): "2020-06-17"
+    assert!(
+        stdout.contains("2020-06-17"),
+        "should contain date-only value 2020-06-17, got:\n{stdout}"
+    );
+    // Verify full precision value: "2021-06-14 22:45:12.3456789"
+    assert!(
+        stdout.contains("2021-06-14 22:45:12.3456789"),
+        "should contain full precision datetime, got:\n{stdout}"
+    );
+}

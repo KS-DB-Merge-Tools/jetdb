@@ -72,6 +72,32 @@ pub fn is_date_only(ts: f64) -> bool {
     frac < 1e-9
 }
 
+// ---------------------------------------------------------------------------
+// DateTimeExtended support
+// ---------------------------------------------------------------------------
+
+/// DateTimeExtended epoch (0001-01-01) expressed as Julian Day Number.
+const EXT_DATETIME_EPOCH_JDN: i64 = 1_721_426;
+
+/// Format a DateTimeExtended value as an ISO 8601 string.
+///
+/// `days` is the number of days since epoch 0001-01-01,
+/// `seconds` is the elapsed seconds within that day,
+/// `nanos100` is the sub-second fraction in 100-nanosecond units.
+pub fn format_ext_datetime(days: i64, seconds: i64, nanos100: i64) -> String {
+    let (y, m, d) = jdn_to_gregorian(EXT_DATETIME_EPOCH_JDN + days);
+    let h = seconds / 3600;
+    let min = (seconds % 3600) / 60;
+    let sec = seconds % 60;
+    if seconds == 0 && nanos100 == 0 {
+        format!("{y:04}-{m:02}-{d:02}")
+    } else if nanos100 == 0 {
+        format!("{y:04}-{m:02}-{d:02} {h:02}:{min:02}:{sec:02}")
+    } else {
+        format!("{y:04}-{m:02}-{d:02} {h:02}:{min:02}:{sec:02}.{nanos100:07}")
+    }
+}
+
 /// Convert Julian Day Number to Gregorian (year, month, day).
 ///
 /// Uses the algorithm from Wikipedia "Julian day" § Converting Gregorian
@@ -282,5 +308,36 @@ mod tests {
     fn format_empty_string() {
         let s = format_timestamp(37623.0, "");
         assert_eq!(s, "");
+    }
+
+    // -- format_ext_datetime ---------------------------------------------------
+
+    #[test]
+    fn ext_datetime_date_only() {
+        // 2020-06-17
+        assert_eq!(format_ext_datetime(737592, 0, 0), "2020-06-17");
+    }
+
+    #[test]
+    fn ext_datetime_with_time_and_nanos() {
+        // 2021-06-14 22:45:12.3456789
+        assert_eq!(
+            format_ext_datetime(737954, 81912, 3456789),
+            "2021-06-14 22:45:12.3456789"
+        );
+    }
+
+    #[test]
+    fn ext_datetime_epoch() {
+        assert_eq!(format_ext_datetime(0, 0, 0), "0001-01-01");
+    }
+
+    #[test]
+    fn ext_datetime_time_no_nanos() {
+        // 2021-06-14 12:45:00
+        assert_eq!(
+            format_ext_datetime(737954, 45900, 0),
+            "2021-06-14 12:45:00"
+        );
     }
 }

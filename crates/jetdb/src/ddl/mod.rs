@@ -1187,6 +1187,13 @@ mod tests {
         assert_eq!(d.map_column_type(&c, false), "BINARY");
     }
 
+    #[test]
+    fn access_map_datetime_extended() {
+        let d = access();
+        let c = col("x", ColumnType::DateTimeExtended, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DATETIME");
+    }
+
     // -- MySQL additional type mappings ---------------------------------------
 
     #[test]
@@ -1273,6 +1280,13 @@ mod tests {
         assert_eq!(d.map_column_type(&c, false), "LONGBLOB");
     }
 
+    #[test]
+    fn mysql_map_datetime_extended() {
+        let d = mysql();
+        let c = col("x", ColumnType::DateTimeExtended, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "DATETIME(6)");
+    }
+
     // -- PostgreSQL additional type mappings -----------------------------------
 
     #[test]
@@ -1352,6 +1366,13 @@ mod tests {
         assert_eq!(d.map_column_type(&c, false), "BYTEA");
     }
 
+    #[test]
+    fn postgres_map_datetime_extended() {
+        let d = postgres();
+        let c = col("x", ColumnType::DateTimeExtended, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "TIMESTAMP WITHOUT TIME ZONE");
+    }
+
     // -- SQLite additional type mappings --------------------------------------
 
     #[test]
@@ -1429,6 +1450,13 @@ mod tests {
         let d = sqlite();
         let c = col("x", ColumnType::Unknown(0xFF), 0, 0, 0, 0);
         assert_eq!(d.map_column_type(&c, false), "BLOB");
+    }
+
+    #[test]
+    fn sqlite_map_datetime_extended() {
+        let d = sqlite();
+        let c = col("x", ColumnType::DateTimeExtended, 0, 0, 0, 0);
+        assert_eq!(d.map_column_type(&c, false), "TEXT");
     }
 
     // ========================================================================

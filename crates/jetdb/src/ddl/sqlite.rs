@@ -31,6 +31,7 @@ impl DdlDialect for Sqlite {
             ColumnType::Numeric => "NUMERIC".to_string(),
             ColumnType::ComplexType => "INTEGER".to_string(),
             ColumnType::BigInt => "INTEGER".to_string(),
+            ColumnType::DateTimeExtended => "TEXT".to_string(),
             ColumnType::Unknown(_) => "BLOB".to_string(),
         }
     }

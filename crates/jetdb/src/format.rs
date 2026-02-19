@@ -329,6 +329,7 @@ pub enum ColumnType {
     Numeric,
     ComplexType,
     BigInt,
+    DateTimeExtended,
     Unknown(u8),
 }
 
@@ -352,6 +353,7 @@ impl ColumnType {
             Self::Numeric => 0x10,
             Self::ComplexType => 0x12,
             Self::BigInt => 0x13,
+            Self::DateTimeExtended => 0x14,
             Self::Unknown(b) => *b,
         }
     }
@@ -376,6 +378,7 @@ impl ColumnType {
             Self::Numeric => Some(17),
             Self::ComplexType => Some(4),
             Self::BigInt => Some(8),
+            Self::DateTimeExtended => Some(42),
             Self::Unknown(_) => None,
         }
     }
@@ -407,6 +410,7 @@ impl TryFrom<u8> for ColumnType {
             0x10 => Ok(Self::Numeric),
             0x12 => Ok(Self::ComplexType),
             0x13 => Ok(Self::BigInt),
+            0x14 => Ok(Self::DateTimeExtended),
             other => Ok(Self::Unknown(other)),
         }
     }
@@ -665,6 +669,7 @@ mod tests {
         assert_eq!(ColumnType::Numeric.fixed_size(), Some(17));
         assert_eq!(ColumnType::ComplexType.fixed_size(), Some(4));
         assert_eq!(ColumnType::BigInt.fixed_size(), Some(8));
+        assert_eq!(ColumnType::DateTimeExtended.fixed_size(), Some(42));
     }
 
     #[test]
@@ -719,6 +724,7 @@ mod tests {
             (0x10, ColumnType::Numeric),
             (0x12, ColumnType::ComplexType),
             (0x13, ColumnType::BigInt),
+            (0x14, ColumnType::DateTimeExtended),
         ];
         for &(byte, expected) in types {
             let ct = ColumnType::try_from(byte).unwrap();
@@ -846,6 +852,7 @@ mod tests {
         assert_eq!(ColumnType::Numeric.to_string(), "Numeric");
         assert_eq!(ColumnType::ComplexType.to_string(), "ComplexType");
         assert_eq!(ColumnType::BigInt.to_string(), "BigInt");
+        assert_eq!(ColumnType::DateTimeExtended.to_string(), "DateTimeExtended");
     }
 
     #[test]

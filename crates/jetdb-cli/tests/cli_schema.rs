@@ -629,3 +629,26 @@ fn ddl_ace12() {
         "should contain CREATE TABLE for ACE12, got:\n{stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// DateTimeExtended column type in schema output
+// ---------------------------------------------------------------------------
+
+#[test]
+fn schema_datetime_extended_type() {
+    let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+    let output = jetdb_bin()
+        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("DateTimeExtended"),
+        "should display DateTimeExtended column type, got:\n{stdout}"
+    );
+}
