@@ -28,8 +28,12 @@ struct Cli {
     #[arg(long = "password", global = true)]
     password: Option<String>,
 
+    /// Print SKILL.md for AI agents and exit
+    #[arg(long = "help-skill", visible_alias = "export-skill")]
+    help_skill: bool,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -498,8 +502,22 @@ fn main() -> ExitCode {
         .init();
 
     let cli = Cli::parse();
+
+    if cli.help_skill {
+        print!("{}", include_str!("SKILL.md"));
+        return ExitCode::SUCCESS;
+    }
+
+    let Some(command) = cli.command else {
+        // No subcommand and no --help-skill: show help
+        use clap::CommandFactory;
+        Cli::command().print_help().ok();
+        eprintln!();
+        return ExitCode::FAILURE;
+    };
+
     let password = cli.password;
-    match cli.command {
+    match command {
         Commands::Ver(args) => cmd_ver(args, password.as_deref()),
         Commands::Tables(args) => cmd_tables(args, password.as_deref()),
         Commands::Schema(args) => cmd_schema(args, password.as_deref()),
