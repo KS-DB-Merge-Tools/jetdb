@@ -124,6 +124,14 @@ fn main() -> Result<(), jetdb::FileError> {
 - パスワード保護された .accdb ファイルは `PageReader::open_with_password` が必要 (Agile, RC4 CryptoAPI, Standard/NonStandard AES)
 - レプリケーションデータベース (.mda) は未テスト
 
+## AI エージェント連携
+
+Claude Code などの AI エージェントにスキルとして登録できます:
+
+```bash
+mkdir -p ~/.claude/skills/jetdb-cli && jetdb --help-skill > ~/.claude/skills/jetdb-cli/SKILL.md
+```
+
 ## 謝辞
 
 - MDB/ACCDB ファイルフォーマットの理解にあたって [mdbtools](https://github.com/mdbtools/mdbtools) の [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) を大いに参考にしました
