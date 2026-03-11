@@ -124,6 +124,14 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 - Password-protected .accdb files require `PageReader::open_with_password` (Agile, RC4 CryptoAPI, Standard/NonStandard AES)
 - Replication databases (.mda) are untested
 
+## AI Agent Integration
+
+Register as a skill for AI agents like Claude Code:
+
+```bash
+mkdir -p ~/.claude/skills/jetdb-cli && jetdb --help-skill > ~/.claude/skills/jetdb-cli/SKILL.md
+```
+
 ## Acknowledgments
 
 - [mdbtools](https://github.com/mdbtools/mdbtools) — [HACKING.md](https://github.com/mdbtools/mdbtools/blob/dev/HACKING.md) was an invaluable reference for understanding the MDB/ACCDB file format
