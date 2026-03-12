@@ -421,6 +421,43 @@ Txt_名前            0x126D    4
 Cmb_ステータス      0x136F    5
 ```
 
+#### form props — フォーム/レポートとコントロールのプロパティ表示
+
+```
+jetdb form props <FILE> <NAME>
+```
+
+Blob バイナリストリームをパースして、フォーム/レポート自体と各コントロールのプロパティを表示する。RecordSource、ControlSource、Filter、Caption、FontName、イベントハンドラ等が含まれる。
+
+既知のプロパティ ID は名前で表示、未知の ID は `0xXXXX` で表示。Binary 値は `(N bytes)`、GUID は `{...}`、Boolean は `yes`/`no` で表示。
+
+##### 出力例
+
+```
+$ jetdb form props database.accdb F_クライアント一覧
+Form: F_クライアント一覧
+
+  Form Properties:
+    RecordSource  SELECT * FROM T_クライアント ORDER BY ID;
+    Filter        ([ID] > 0)
+    Caption       クライアント一覧
+    FontName      ＭＳ Ｐゴシック
+
+  Control: フォームヘッダー (0x1899)
+    Name    フォームヘッダー
+
+  Control: Txt_名前 (0x126D)
+    Name           Txt_名前
+    ControlSource  名前
+    FontName       Meiryo UI
+
+  Control: Cmb_ステータス (0x136F)
+    Name           Cmb_ステータス
+    RowSourceType  Table/Query
+    RowSource      SELECT ステータス FROM T_ステータス一覧;
+    FontName       Meiryo UI
+```
+
 ### export — テーブルデータの CSV エクスポート
 
 ```

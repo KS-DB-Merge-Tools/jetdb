@@ -1,4 +1,7 @@
 //! Form and report design stream extraction from MSysAccessStorage.
+//!
+//! Also provides Blob binary parsing to extract form/report properties
+//! (RecordSource, ControlSource, Filter, etc.) and per-control properties.
 
 use crate::encoding;
 use crate::file::{FileError, PageReader};
@@ -70,6 +73,48 @@ pub struct FormTypeInfo {
     pub form_name: String,
     pub object_type: FormObjectType,
     pub controls: Vec<ControlInfo>,
+}
+
+/// Property value extracted from a Blob stream.
+#[derive(Debug, Clone)]
+pub enum BlobValue {
+    Bool(bool),
+    Short(i16),
+    Long(i32),
+    Color(u32),
+    Double(f64),
+    Guid(String),
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+/// A single property entry from the Blob binary.
+#[derive(Debug, Clone)]
+pub struct BlobProperty {
+    pub prop_id: u16,
+    pub value: BlobValue,
+}
+
+/// Properties for a single control, extracted from the Blob.
+#[derive(Debug, Clone)]
+pub struct ControlProperties {
+    /// Control name (from Name property 0x14 in Blob).
+    pub name: String,
+    /// Control type code (from TypeInfo).
+    pub type_code: u16,
+    /// Properties for this control.
+    pub properties: Vec<BlobProperty>,
+}
+
+/// All properties for a form or report, including per-control properties.
+#[derive(Debug, Clone)]
+pub struct FormProperties {
+    pub form_name: String,
+    pub object_type: FormObjectType,
+    /// Form/report-level properties (RecordSource, Filter, etc.).
+    pub properties: Vec<BlobProperty>,
+    /// Per-control properties.
+    pub controls: Vec<ControlProperties>,
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +198,113 @@ pub fn read_form_type_info(
     Ok(FormTypeInfo {
         form_name: name.to_string(),
         object_type,
+        controls,
+    })
+}
+
+/// Return the known property name for a given prop_id, or `None`.
+pub fn prop_id_name(prop_id: u16) -> Option<&'static str> {
+    match prop_id {
+        0x0011 => Some("Caption"),
+        0x0012 => Some("ColumnWidths"),
+        0x0014 => Some("Name"),
+        0x001B => Some("ControlSource"),
+        0x0022 => Some("FontName"),
+        0x0026 => Some("Format"),
+        0x005B => Some("RowSource"),
+        0x005D => Some("RowSourceType"),
+        0x0068 => Some("OnClick"),
+        0x0072 => Some("OnDblClick"),
+        0x0074 => Some("OnMouseDown"),
+        0x007E => Some("OnKeyPress"),
+        0x009C => Some("RecordSource"),
+        0x00A0 => Some("FontName"),
+        0x00F5 => Some("Filter"),
+        0x010A => Some("LabelType"),
+        0x015A => Some("InputMask"),
+        _ => None,
+    }
+}
+
+impl BlobProperty {
+    /// Return the known property name, or `None` for unknown IDs.
+    pub fn name(&self) -> Option<&'static str> {
+        prop_id_name(self.prop_id)
+    }
+
+    /// Return a display label: the known name or `0xXXXX`.
+    pub fn display_name(&self) -> String {
+        match self.name() {
+            Some(n) => n.to_string(),
+            None => format!("0x{:04X}", self.prop_id),
+        }
+    }
+}
+
+impl std::fmt::Display for BlobValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Bool(v) => write!(f, "{}", if *v { "yes" } else { "no" }),
+            Self::Short(v) => write!(f, "{v}"),
+            Self::Long(v) => write!(f, "{v}"),
+            Self::Color(v) => write!(f, "#{:06X}", v & 0x00FF_FFFF),
+            Self::Double(v) => write!(f, "{v}"),
+            Self::Guid(v) => write!(f, "{v}"),
+            Self::Text(v) => write!(f, "{v}"),
+            Self::Binary(v) => write!(f, "({} bytes)", v.len()),
+        }
+    }
+}
+
+/// Read and parse all properties from a named form or report.
+///
+/// Parses the Blob binary to extract form-level and per-control properties.
+/// TypeInfo is used to associate control names and type codes.
+pub fn read_form_properties(
+    reader: &mut PageReader,
+    name: &str,
+) -> Result<FormProperties, FileError> {
+    let entries = storage::read_storage_entries(reader)?;
+    let (object_type, blob_data) = find_stream(&entries, name, StreamKind::Blob)?;
+
+    // Try to get TypeInfo for control name/type mapping; not fatal if missing.
+    let type_info_controls = match find_stream(&entries, name, StreamKind::TypeInfo) {
+        Ok((_, ti_data)) => parse_type_info(&ti_data).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    let (form_props, control_prop_groups) = parse_blob(&blob_data)?;
+
+    // Merge control property groups with TypeInfo data.
+    let controls = control_prop_groups
+        .into_iter()
+        .enumerate()
+        .map(|(i, props)| {
+            // Find control name from Blob's Name property (0x14).
+            let blob_name = props
+                .iter()
+                .find(|p| p.prop_id == 0x0014)
+                .and_then(|p| match &p.value {
+                    BlobValue::Text(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .unwrap_or_else(|| format!("Control_{i}"));
+
+            // Match with TypeInfo by index to get type_code.
+            let type_code = type_info_controls.get(i).map(|c| c.type_code).unwrap_or(0);
+
+            ControlProperties {
+                name: blob_name,
+                type_code,
+                properties: props,
+            }
+        })
+        .collect();
+
+    Ok(FormProperties {
+        form_name: name.to_string(),
+        object_type,
+        properties: form_props,
         controls,
     })
 }
@@ -397,6 +549,317 @@ fn decode_shift_jis(bytes: &[u8]) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Internal: Blob parser
+// ---------------------------------------------------------------------------
+
+/// Parse the Blob binary into form-level and per-control property groups.
+///
+/// Returns (form_properties, vec_of_control_properties).
+/// Each control section starts with a Name (0x14) property.
+/// Parsing stops gracefully on unknown types or malformed data.
+///
+/// Entry format (reverse-engineered):
+///   prop_id(u16) + type(u32) + B(u32) + C(u32) + data[type-dependent]
+///   Header = 14 bytes, then type-specific data.
+///
+/// Some types (≥ 0x08) have a 4-byte trailer after the data.
+fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>), FileError> {
+    if data.len() < 14 {
+        return Ok((Vec::new(), Vec::new()));
+    }
+
+    // Skip 8-byte blob header + 6-byte section preamble.
+    let mut pos = 14;
+    let mut all_props = Vec::new();
+
+    while pos + 14 <= data.len() {
+        let prop_id = u16::from_le_bytes([data[pos], data[pos + 1]]);
+        let type_code = u32::from_le_bytes([data[pos + 2], data[pos + 3], data[pos + 4], data[pos + 5]]);
+        let _b = u32::from_le_bytes([data[pos + 6], data[pos + 7], data[pos + 8], data[pos + 9]]);
+        let c = u32::from_le_bytes([data[pos + 10], data[pos + 11], data[pos + 12], data[pos + 13]]);
+        let data_start = pos + 14;
+
+        match type_code {
+            0x01 => {
+                // Bool: 4 bytes data, no trailer. Total = 18.
+                if data_start + 4 > data.len() {
+                    break;
+                }
+                let val = u32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Bool(val != 0),
+                });
+                pos += 18;
+            }
+            0x02 => {
+                // Short: 5 bytes data, no trailer. Total = 19.
+                if data_start + 5 > data.len() {
+                    break;
+                }
+                let val = i16::from_le_bytes([data[data_start], data[data_start + 1]]);
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Short(val),
+                });
+                pos += 19;
+            }
+            0x03 => {
+                // Long: 6 bytes data, no trailer. Total = 20.
+                if data_start + 6 > data.len() {
+                    break;
+                }
+                let val = i32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Long(val),
+                });
+                pos += 20;
+            }
+            0x04 => {
+                // Color: 8 bytes data (4 color + 4 extra), no trailer. Total = 22.
+                if data_start + 8 > data.len() {
+                    break;
+                }
+                let val = u32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Color(val),
+                });
+                pos += 22;
+            }
+            0x08 => {
+                // Double: 8 bytes data + 4 byte trailer. Total = 26.
+                if data_start + 12 > data.len() {
+                    break;
+                }
+                let val = f64::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                    data[data_start + 4], data[data_start + 5],
+                    data[data_start + 6], data[data_start + 7],
+                ]);
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Double(val),
+                });
+                pos += 26;
+            }
+            0x09 => {
+                // GUID: 16 bytes data + 4 byte trailer. Total = 34.
+                if data_start + 20 > data.len() {
+                    break;
+                }
+                let guid = format_guid(&data[data_start..data_start + 16]);
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Guid(guid),
+                });
+                pos += 34;
+            }
+            0x0A | 0x0C => {
+                // Variable-length text: C bytes data + 4 byte trailer.
+                let byte_len = c as usize;
+                if data_start + byte_len + 4 > data.len() {
+                    break;
+                }
+                let text_bytes = &data[data_start..data_start + byte_len];
+                let text = encoding::decode_utf16le(text_bytes).unwrap_or_else(|_| {
+                    String::from_utf8_lossy(text_bytes).into_owned()
+                });
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Text(text),
+                });
+                pos += 14 + byte_len + 4;
+            }
+            0x0B => {
+                // Variable-length binary: C bytes data + 4 byte trailer.
+                let byte_len = c as usize;
+                if data_start + byte_len + 4 > data.len() {
+                    break;
+                }
+                let bin_data = data[data_start..data_start + byte_len].to_vec();
+                all_props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Binary(bin_data),
+                });
+                pos += 14 + byte_len + 4;
+            }
+            _ => {
+                // Unknown type — stop parsing gracefully.
+                break;
+            }
+        }
+    }
+
+    // The sequential parse above covers form-level properties but stops at binary
+    // layout data in the middle. Control sections come later, each starting with a
+    // Name (prop_id=0x14, type=0x0A) property. Scan the remaining blob for these.
+    let control_groups = scan_control_sections(data, pos);
+
+    Ok((all_props, control_groups))
+}
+
+/// Scan the blob for control property sections starting with Name (0x14) entries.
+///
+/// Each control section begins with prop_id=0x14 (Name) + type=0x0A (Text).
+/// The byte pattern is `[14, 00, 0A, 00, 00, 00]`.
+fn scan_control_sections(data: &[u8], start: usize) -> Vec<Vec<BlobProperty>> {
+    // Pattern: prop_id(0x14, 0x00) + type(0x0A, 0x00, 0x00, 0x00)
+    let pattern: [u8; 6] = [0x14, 0x00, 0x0A, 0x00, 0x00, 0x00];
+
+    // Find all positions where control sections start.
+    let mut section_starts = Vec::new();
+    let mut search_pos = start;
+    while search_pos + 6 <= data.len() {
+        if data[search_pos..search_pos + 6] == pattern {
+            section_starts.push(search_pos);
+            search_pos += 6; // skip past this match
+        } else {
+            search_pos += 1;
+        }
+    }
+
+    // Parse properties from each section start.
+    let mut control_groups = Vec::new();
+    for (i, &sec_start) in section_starts.iter().enumerate() {
+        let sec_end = section_starts.get(i + 1).copied().unwrap_or(data.len());
+        let props = parse_section_props(data, sec_start, sec_end);
+        if !props.is_empty() {
+            control_groups.push(props);
+        }
+    }
+
+    control_groups
+}
+
+/// Parse property entries from a section of the blob.
+///
+/// Same entry format as `parse_blob`, but limited to the given range.
+fn parse_section_props(data: &[u8], start: usize, end: usize) -> Vec<BlobProperty> {
+    let mut props = Vec::new();
+    let mut pos = start;
+
+    while pos + 14 <= end {
+        let prop_id = u16::from_le_bytes([data[pos], data[pos + 1]]);
+        let type_code = u32::from_le_bytes([data[pos + 2], data[pos + 3], data[pos + 4], data[pos + 5]]);
+        let _b = u32::from_le_bytes([data[pos + 6], data[pos + 7], data[pos + 8], data[pos + 9]]);
+        let c = u32::from_le_bytes([data[pos + 10], data[pos + 11], data[pos + 12], data[pos + 13]]);
+        let data_start = pos + 14;
+
+        match type_code {
+            0x01 => {
+                if data_start + 4 > end { break; }
+                let val = u32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Bool(val != 0) });
+                pos += 18;
+            }
+            0x02 => {
+                if data_start + 5 > end { break; }
+                let val = i16::from_le_bytes([data[data_start], data[data_start + 1]]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Short(val) });
+                pos += 19;
+            }
+            0x03 => {
+                if data_start + 6 > end { break; }
+                let val = i32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Long(val) });
+                pos += 20;
+            }
+            0x04 => {
+                if data_start + 8 > end { break; }
+                let val = u32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Color(val) });
+                pos += 22;
+            }
+            0x06 => {
+                // Type 6: observed in control sections. 6 bytes data, no trailer. Total = 20.
+                if data_start + 6 > end { break; }
+                let val = i32::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                ]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Long(val) });
+                pos += 20;
+            }
+            0x08 => {
+                if data_start + 12 > end { break; }
+                let val = f64::from_le_bytes([
+                    data[data_start], data[data_start + 1],
+                    data[data_start + 2], data[data_start + 3],
+                    data[data_start + 4], data[data_start + 5],
+                    data[data_start + 6], data[data_start + 7],
+                ]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Double(val) });
+                pos += 26;
+            }
+            0x09 => {
+                if data_start + 20 > end { break; }
+                let guid = format_guid(&data[data_start..data_start + 16]);
+                props.push(BlobProperty { prop_id, value: BlobValue::Guid(guid) });
+                pos += 34;
+            }
+            0x0A | 0x0C => {
+                let byte_len = c as usize;
+                if data_start + byte_len + 4 > end { break; }
+                let text_bytes = &data[data_start..data_start + byte_len];
+                let text = encoding::decode_utf16le(text_bytes).unwrap_or_else(|_| {
+                    String::from_utf8_lossy(text_bytes).into_owned()
+                });
+                props.push(BlobProperty { prop_id, value: BlobValue::Text(text) });
+                pos += 14 + byte_len + 4;
+            }
+            0x0B => {
+                let byte_len = c as usize;
+                if data_start + byte_len + 4 > end { break; }
+                let bin_data = data[data_start..data_start + byte_len].to_vec();
+                props.push(BlobProperty { prop_id, value: BlobValue::Binary(bin_data) });
+                pos += 14 + byte_len + 4;
+            }
+            _ => {
+                break;
+            }
+        }
+    }
+
+    props
+}
+
+/// Format 16 bytes as a GUID string `{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}`.
+fn format_guid(bytes: &[u8]) -> String {
+    if bytes.len() < 16 {
+        return format!("({} bytes)", bytes.len());
+    }
+    let d1 = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    let d2 = u16::from_le_bytes([bytes[4], bytes[5]]);
+    let d3 = u16::from_le_bytes([bytes[6], bytes[7]]);
+    format!(
+        "{{{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}}}",
+        d1, d2, d3, bytes[8], bytes[9], bytes[10], bytes[11],
+        bytes[12], bytes[13], bytes[14], bytes[15]
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -566,4 +1029,215 @@ mod tests {
         let forms = list_forms(&mut reader).unwrap();
         assert!(forms.is_empty(), "expected no forms in plain test database");
     }
+
+    // -- Blob parser unit tests (synthetic binary) ----------------------------
+
+    /// Build a minimal blob with 8-byte header + 6-byte preamble + entries.
+    fn make_blob(entries: &[u8]) -> Vec<u8> {
+        let mut data = vec![0u8; 14]; // 8 header + 6 preamble
+        data.extend_from_slice(entries);
+        data
+    }
+
+    /// Build a single Blob entry for a given type.
+    fn make_entry(prop_id: u16, type_code: u32, b: u32, c: u32, payload: &[u8]) -> Vec<u8> {
+        let mut entry = Vec::new();
+        entry.extend_from_slice(&prop_id.to_le_bytes());
+        entry.extend_from_slice(&type_code.to_le_bytes());
+        entry.extend_from_slice(&b.to_le_bytes());
+        entry.extend_from_slice(&c.to_le_bytes());
+        entry.extend_from_slice(payload);
+        entry
+    }
+
+    #[test]
+    fn parse_blob_empty() {
+        let data = vec![0u8; 14];
+        let (form_props, controls) = parse_blob(&data).unwrap();
+        assert!(form_props.is_empty());
+        assert!(controls.is_empty());
+    }
+
+    #[test]
+    fn parse_blob_too_short() {
+        let (form_props, controls) = parse_blob(&[0u8; 5]).unwrap();
+        assert!(form_props.is_empty());
+        assert!(controls.is_empty());
+    }
+
+    #[test]
+    fn parse_blob_bool_entry() {
+        // Bool (type 0x01): 4 bytes data, total entry = 18
+        let payload = [0x01, 0x00, 0x00, 0x00]; // true
+        let entry = make_entry(0x0013, 0x01, 0, 0, &payload);
+        let blob = make_blob(&entry);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1);
+        assert_eq!(props[0].prop_id, 0x0013);
+        assert!(matches!(props[0].value, BlobValue::Bool(true)));
+    }
+
+    #[test]
+    fn parse_blob_short_entry() {
+        // Short (type 0x02): 5 bytes data, total entry = 19
+        let payload = [0x2A, 0x00, 0x00, 0x00, 0x00]; // 42
+        let entry = make_entry(0x0098, 0x02, 0, 0, &payload);
+        let blob = make_blob(&entry);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1);
+        assert!(matches!(props[0].value, BlobValue::Short(42)));
+    }
+
+    #[test]
+    fn parse_blob_long_entry() {
+        // Long (type 0x03): 6 bytes data, total entry = 20
+        let payload = [0x00, 0x01, 0x00, 0x00, 0x00, 0x00]; // 256
+        let entry = make_entry(0x002A, 0x03, 0, 0, &payload);
+        let blob = make_blob(&entry);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1);
+        assert!(matches!(props[0].value, BlobValue::Long(256)));
+    }
+
+    #[test]
+    fn parse_blob_text_entry() {
+        // Text (type 0x0A): C bytes data + 4 byte trailer
+        let text = "AB"; // UTF-16LE: [0x41, 0x00, 0x42, 0x00]
+        let text_bytes = [0x41, 0x00, 0x42, 0x00];
+        let c = text_bytes.len() as u32;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&text_bytes);
+        payload.extend_from_slice(&[0x00; 4]); // trailer
+        let entry = make_entry(0x009C, 0x0A, 0, c, &payload);
+        let blob = make_blob(&entry);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1);
+        assert_eq!(props[0].prop_id, 0x009C); // RecordSource
+        match &props[0].value {
+            BlobValue::Text(s) => assert_eq!(s, text),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_blob_binary_entry() {
+        // Binary (type 0x0B): C bytes data + 4 byte trailer
+        let bin = [0xDE, 0xAD, 0xBE, 0xEF];
+        let c = bin.len() as u32;
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&bin);
+        payload.extend_from_slice(&[0x00; 4]); // trailer
+        let entry = make_entry(0x00BD, 0x0B, 0, c, &payload);
+        let blob = make_blob(&entry);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1);
+        match &props[0].value {
+            BlobValue::Binary(v) => assert_eq!(v.as_slice(), &bin),
+            other => panic!("expected Binary, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_blob_multiple_entries() {
+        let mut entries = Vec::new();
+        // Bool entry
+        entries.extend_from_slice(&make_entry(0x0013, 0x01, 0, 0, &[0x00; 4]));
+        // Short entry
+        entries.extend_from_slice(&make_entry(0x0098, 0x02, 0, 0, &[0x07, 0x00, 0x00, 0x00, 0x00]));
+        // Long entry
+        entries.extend_from_slice(&make_entry(0x002A, 0x03, 0, 0, &[0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00]));
+
+        let blob = make_blob(&entries);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 3);
+        assert!(matches!(props[0].value, BlobValue::Bool(false)));
+        assert!(matches!(props[1].value, BlobValue::Short(7)));
+        assert!(matches!(props[2].value, BlobValue::Long(-1)));
+    }
+
+    #[test]
+    fn parse_blob_stops_on_unknown_type() {
+        let mut entries = Vec::new();
+        // Valid Bool entry
+        entries.extend_from_slice(&make_entry(0x0013, 0x01, 0, 0, &[0x01; 4]));
+        // Unknown type 0xFF
+        entries.extend_from_slice(&make_entry(0x9999, 0xFF, 0, 0, &[0x00; 10]));
+
+        let blob = make_blob(&entries);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1, "should stop at unknown type");
+    }
+
+    #[test]
+    fn parse_blob_guid_entry() {
+        // GUID (type 0x09): 16 bytes data + 4 byte trailer, total = 34
+        let guid_bytes = [
+            0x50, 0xA6, 0x64, 0x8D, 0xE7, 0x62, 0x03, 0x49,
+            0x97, 0x33, 0x0D, 0x8C, 0xE8, 0x49, 0x78, 0xBF,
+        ];
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&guid_bytes);
+        payload.extend_from_slice(&[0x00; 4]); // trailer
+        let entry = make_entry(0x0178, 0x09, 0, 0, &payload);
+        let blob = make_blob(&entry);
+        let (props, _) = parse_blob(&blob).unwrap();
+        assert_eq!(props.len(), 1);
+        match &props[0].value {
+            BlobValue::Guid(s) => assert!(s.starts_with('{') && s.ends_with('}')),
+            other => panic!("expected Guid, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn prop_id_name_known() {
+        assert_eq!(prop_id_name(0x009C), Some("RecordSource"));
+        assert_eq!(prop_id_name(0x001B), Some("ControlSource"));
+        assert_eq!(prop_id_name(0x00F5), Some("Filter"));
+        assert_eq!(prop_id_name(0x0014), Some("Name"));
+    }
+
+    #[test]
+    fn prop_id_name_unknown() {
+        assert_eq!(prop_id_name(0xFFFF), None);
+    }
+
+    #[test]
+    fn blob_property_display_name() {
+        let known = BlobProperty { prop_id: 0x009C, value: BlobValue::Bool(true) };
+        assert_eq!(known.display_name(), "RecordSource");
+
+        let unknown = BlobProperty { prop_id: 0x1234, value: BlobValue::Bool(true) };
+        assert_eq!(unknown.display_name(), "0x1234");
+    }
+
+    #[test]
+    fn blob_value_display() {
+        assert_eq!(format!("{}", BlobValue::Bool(true)), "yes");
+        assert_eq!(format!("{}", BlobValue::Bool(false)), "no");
+        assert_eq!(format!("{}", BlobValue::Short(42)), "42");
+        assert_eq!(format!("{}", BlobValue::Long(-1)), "-1");
+        assert_eq!(format!("{}", BlobValue::Color(0x00FF0000)), "#FF0000");
+        assert_eq!(format!("{}", BlobValue::Text("hello".into())), "hello");
+        assert_eq!(format!("{}", BlobValue::Binary(vec![0; 10])), "(10 bytes)");
+    }
+
+    // -- Integration test: read_form_properties with real file ----------------
+
+    #[test]
+    fn read_form_properties_v2007() {
+        let path = skip_if_missing!("vbaV2007.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "Form1").unwrap();
+        assert_eq!(props.object_type, FormObjectType::Form);
+        // Should have at least some form-level properties.
+        assert!(
+            !props.properties.is_empty(),
+            "expected form-level properties, got empty"
+        );
+    }
+
+    // TODO: Integration tests with formPropTest.accdb (pending test data creation):
+    // - Verify RecordSource, Filter, ControlSource values
+    // - Verify report properties
+    // - Verify control property parsing with calculated fields
 }

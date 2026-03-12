@@ -25,6 +25,8 @@ pub enum FormCommands {
     Dump(FormDumpArgs),
     /// List control names from TypeInfo
     Controls(FormControlsArgs),
+    /// Show form/report and control properties parsed from Blob
+    Props(FormPropsArgs),
 }
 
 #[derive(Args)]
@@ -64,6 +66,15 @@ pub struct FormDumpArgs {
 
 #[derive(Args)]
 pub struct FormControlsArgs {
+    /// Database file path (.mdb / .accdb)
+    pub file: PathBuf,
+
+    /// Form or report name
+    pub name: String,
+}
+
+#[derive(Args)]
+pub struct FormPropsArgs {
     /// Database file path (.mdb / .accdb)
     pub file: PathBuf,
 
@@ -111,6 +122,13 @@ pub fn cmd_form(args: FormArgs, password: Option<&str>) -> ExitCode {
             }
         },
         FormCommands::Controls(a) => match run_controls(&a, password) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                log::error!("{e}");
+                ExitCode::FAILURE
+            }
+        },
+        FormCommands::Props(a) => match run_props(&a, password) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 log::error!("{e}");
@@ -182,4 +200,43 @@ fn run_controls(args: &FormControlsArgs, password: Option<&str>) -> Result<(), j
     }
 
     Ok(())
+}
+
+fn run_props(args: &FormPropsArgs, password: Option<&str>) -> Result<(), jetdb::FileError> {
+    let mut reader = PageReader::open_with_password(&args.file, password)?;
+    let form_props = jetdb::read_form_properties(&mut reader, &args.name)?;
+
+    let type_label = match form_props.object_type {
+        FormObjectType::Form => "Form",
+        FormObjectType::Report => "Report",
+    };
+    println!("{type_label}: {}", form_props.form_name);
+
+    if !form_props.properties.is_empty() {
+        println!();
+        println!("  {type_label} Properties:");
+        print_properties(&form_props.properties);
+    }
+
+    for ctrl in &form_props.controls {
+        println!();
+        println!("  Control: {} (0x{:04X})", ctrl.name, ctrl.type_code);
+        print_properties(&ctrl.properties);
+    }
+
+    Ok(())
+}
+
+fn print_properties(props: &[jetdb::BlobProperty]) {
+    // Calculate max label width for alignment.
+    let max_width = props
+        .iter()
+        .map(|p| p.display_name().len())
+        .max()
+        .unwrap_or(0);
+
+    for prop in props {
+        let label = prop.display_name();
+        println!("    {label:<max_width$}  {}", prop.value);
+    }
 }

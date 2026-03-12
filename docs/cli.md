@@ -422,6 +422,43 @@ Txt_Name      0x126D    4
 Cmb_Status    0x136F    5
 ```
 
+#### form props — Show form/report and control properties
+
+```
+jetdb form props <FILE> <NAME>
+```
+
+Parse the Blob binary stream and display properties for the form/report itself and each control. Properties include RecordSource, ControlSource, Filter, Caption, FontName, event handlers, and more.
+
+Known property IDs are displayed by name; unknown IDs are shown as `0xXXXX`. Binary values are shown as `(N bytes)`, GUIDs as `{...}`, and booleans as `yes`/`no`.
+
+##### Output examples
+
+```
+$ jetdb form props database.accdb F_ClientList
+Form: F_ClientList
+
+  Form Properties:
+    RecordSource  SELECT * FROM T_Clients ORDER BY ID;
+    Filter        ([ID] > 0)
+    Caption       Client List
+    FontName      MS PGothic
+
+  Control: FormHeader (0x1899)
+    Name    FormHeader
+
+  Control: Txt_Name (0x126D)
+    Name           Txt_Name
+    ControlSource  Name
+    FontName       Meiryo UI
+
+  Control: Cmb_Status (0x136F)
+    Name           Cmb_Status
+    RowSourceType  Table/Query
+    RowSource      SELECT Status FROM T_StatusList;
+    FontName       Meiryo UI
+```
+
 ### export — Export table data as CSV
 
 ```
