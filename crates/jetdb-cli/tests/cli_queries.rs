@@ -181,6 +181,44 @@ fn queries_newline_delimiter_conflict() {
 }
 
 // ---------------------------------------------------------------------------
+// Japanese query name
+// ---------------------------------------------------------------------------
+
+#[test]
+fn queries_japanese_name() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["queries", "list", "-1", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.lines().any(|l| l == "jp_クエリ_02"),
+        "should contain Japanese query name jp_クエリ_02, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn queries_show_japanese() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["queries", "show", path.to_str().unwrap(), "jp_クエリ_02"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("jp_テーブル2"),
+        "SQL should reference Japanese table name, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Jet3 (V1997): list queries
 // ---------------------------------------------------------------------------
 

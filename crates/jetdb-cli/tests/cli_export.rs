@@ -456,3 +456,30 @@ fn export_datetime_extended() {
         "should contain full precision datetime, got:\n{stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Japanese table name, column names, and data values
+// ---------------------------------------------------------------------------
+
+#[test]
+fn export_japanese_table() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["export", path.to_str().unwrap(), "jp_テーブル2"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(lines.len() > 1, "should have header + data rows");
+    // Header should contain Japanese column names
+    assert!(lines[0].contains("商品名"), "header should contain 商品名");
+    assert!(lines[0].contains("単価"), "header should contain 単価");
+    assert!(lines[0].contains("個数"), "header should contain 個数");
+    // Data should contain Japanese values
+    assert!(stdout.contains("商品1"), "should contain Japanese data value 商品1");
+}

@@ -327,6 +327,47 @@ fn schema_ace12() {
 }
 
 // ---------------------------------------------------------------------------
+// Japanese table and column names
+// ---------------------------------------------------------------------------
+
+#[test]
+fn schema_japanese_table() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["schema", path.to_str().unwrap(), "-T", "jp_テーブル2"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Table: jp_テーブル2"),
+        "should contain Japanese table name, got:\n{stdout}"
+    );
+    assert!(stdout.contains("商品名"), "should contain Japanese column name 商品名");
+    assert!(stdout.contains("単価"), "should contain Japanese column name 単価");
+    assert!(stdout.contains("個数"), "should contain Japanese column name 個数");
+}
+
+#[test]
+fn ddl_japanese_identifiers() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["schema", path.to_str().unwrap(), "--ddl", "sqlite", "-T", "jp_テーブル2"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("\"jp_テーブル2\""),
+        "DDL should quote Japanese table name, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"商品名\""),
+        "DDL should quote Japanese column name, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // ACE14 (V2010)
 // ---------------------------------------------------------------------------
 

@@ -160,6 +160,25 @@ fn tables_conflict_t_and_big_t() {
 }
 
 // ---------------------------------------------------------------------------
+// Japanese table name
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_japanese_name() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.lines().any(|l| l == "jp_テーブル2"),
+        "should contain Japanese table name jp_テーブル2, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Jet3 (V1997)
 // ---------------------------------------------------------------------------
 

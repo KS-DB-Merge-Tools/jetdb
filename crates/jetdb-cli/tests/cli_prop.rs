@@ -40,6 +40,33 @@ fn prop_table1() {
 }
 
 // ---------------------------------------------------------------------------
+// Japanese object and column names
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prop_japanese_table() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["prop", path.to_str().unwrap(), "jp_テーブル2"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Object: jp_テーブル2"),
+        "should contain Japanese object name, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Column: 商品名"),
+        "should contain Japanese column name 商品名, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Jet3 (V1997)
 // ---------------------------------------------------------------------------
 
