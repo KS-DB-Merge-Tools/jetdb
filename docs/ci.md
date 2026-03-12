@@ -65,6 +65,8 @@ Measure cyclomatic complexity, cognitive complexity, and other source code metri
 rust-code-analysis-cli -m -p crates/ -O json
 ```
 
+The raw JSON output is piped through the `complexity-filter` crate (`crates/complexity-filter/`) to display only functions exceeding the threshold (CC>=10, Cognitive>=10, or SLOC>=50). The `quality-check.sh` script runs this automatically.
+
 Installation:
 
 ```bash
@@ -99,12 +101,29 @@ cargo install cargo-llvm-cov
 
 > **Note**: The `llvm-tools-preview` component is required. It will be installed automatically on first run.
 
-## Recommended Execution Order
+#### Coverage Notes
+
+`relationship.rs` (~76%) and `vba.rs` (~80%) have the lowest line coverage. `crypto.rs` (~88%) is also below average. Uncovered lines in these files are error-mapping closures (`.map_err`), `.ok_or()` error paths for missing columns, XML parse error branches, and `continue` branches for malformed data — none of which are reachable with valid database files. llvm-cov counts each closure as a separate function, making function coverage appear low, but all normal-path logic (including all AES key sizes, all hash algorithms, and page decryption) is fully tested.
+
+## Quality Check Script
+
+`scripts/quality-check.sh` runs all checks in sequence with pass/fail reporting. Always use this script instead of running checks manually.
+
+```bash
+scripts/quality-check.sh
+```
+
+The script stops immediately on test or clippy failure. Other checks (audit, doc, coverage, complexity) report failures but continue to run.
+
+## Execution Order
+
+The quality check script runs checks in the following order:
 
 1. `cargo test` — Verify existing tests pass first
-2. `cargo llvm-cov --workspace` — Measure test coverage
-3. `cargo clippy -- -D warnings` — Check code quality
-4. `cargo audit` — Check for security issues
-5. `cargo doc --workspace` — Verify documentation builds correctly
+2. `cargo clippy -- -D warnings` — Check code quality
+3. `cargo audit` — Check for security issues
+4. `cargo doc --workspace` — Verify documentation builds correctly
+5. `cargo llvm-cov --workspace` — Measure test coverage
+6. `rust-code-analysis-cli` — Measure code complexity
 
-Running other checks is pointless if tests don't pass, so `cargo test` comes first. `cargo llvm-cov` measures coverage and should run right after tests. `cargo clippy` detects code issues and should run early. `cargo audit` and `cargo doc` are independent and can run in any order.
+Tests and clippy are fatal — the script aborts if either fails. Coverage and complexity run last because they take the longest.
