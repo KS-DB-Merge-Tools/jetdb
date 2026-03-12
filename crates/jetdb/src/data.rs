@@ -2038,6 +2038,39 @@ mod tests {
     // -- Overflow (LOOKUP_FLAG) rows ------------------------------------------
 
     #[test]
+    fn japanese_data_values() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "jp_テーブル2")
+            .expect("jp_テーブル2 entry in catalog");
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert!(!result.rows.is_empty(), "jp_テーブル2 should have rows");
+
+        let name_idx = table
+            .columns
+            .iter()
+            .position(|c| c.name == "商品名")
+            .expect("商品名 column");
+        let text_values: Vec<&str> = result
+            .rows
+            .iter()
+            .filter_map(|row| match &row[name_idx] {
+                Value::Text(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            text_values.iter().any(|v| v.contains("商品")),
+            "should contain 商品 in text values, found: {text_values:?}"
+        );
+    }
+
+    #[test]
     fn overflow_row_msysaccessstorage() {
         let path = skip_if_missing!("overflow_enc_vbaV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();

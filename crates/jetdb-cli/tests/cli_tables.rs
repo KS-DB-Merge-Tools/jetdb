@@ -192,6 +192,10 @@ fn tables_jet3() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.trim().is_empty(), "should list at least one user table");
+    assert!(
+        stdout.lines().any(|l| l == "Table1"),
+        "should contain Table1, got: {stdout}"
+    );
     for line in stdout.lines() {
         assert!(!line.contains("MSys"), "default output should not contain system tables");
     }
@@ -211,6 +215,10 @@ fn tables_ace12() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.trim().is_empty(), "should list at least one user table");
+    assert!(
+        stdout.lines().any(|l| l == "Table1"),
+        "should contain Table1, got: {stdout}"
+    );
     for line in stdout.lines() {
         assert!(!line.contains("MSys"), "default output should not contain system tables");
     }
@@ -230,6 +238,10 @@ fn tables_ace14() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.trim().is_empty(), "should list at least one user table");
+    assert!(
+        stdout.lines().any(|l| l == "Table1"),
+        "should contain Table1, got: {stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +258,10 @@ fn tables_ace17() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.trim().is_empty(), "should list at least one user table");
+    assert!(
+        stdout.lines().any(|l| l == "Table1"),
+        "should contain Table1, got: {stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------

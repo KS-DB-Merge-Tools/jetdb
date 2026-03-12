@@ -2100,6 +2100,19 @@ mod tests {
                 q.name
             );
         }
+
+        // Verify Japanese query name and SQL content
+        let jp_query = queries.iter().find(|q| q.name == "jp_クエリ_02");
+        assert!(
+            jp_query.is_some(),
+            "should contain jp_クエリ_02, found: {:?}",
+            queries.iter().map(|q| &q.name).collect::<Vec<_>>()
+        );
+        let sql = query_to_sql(jp_query.unwrap());
+        assert!(
+            sql.contains("jp_テーブル2"),
+            "jp_クエリ_02 SQL should reference jp_テーブル2, got: {sql}"
+        );
     }
 
     #[test]

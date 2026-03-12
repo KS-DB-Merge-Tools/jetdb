@@ -78,7 +78,7 @@ fn export_tab_delimiter() {
         .expect("failed to run jetdb");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let header = stdout.lines().next().unwrap_or("");
+    let header = stdout.lines().next().expect("should have at least a header line");
     assert!(
         header.contains('\t'),
         "header should contain tabs with -d tab, got: {header}"

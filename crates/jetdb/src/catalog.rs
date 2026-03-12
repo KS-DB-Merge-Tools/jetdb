@@ -340,4 +340,18 @@ mod tests {
         let names = filter_user_tables(catalog);
         assert_eq!(names, vec!["Employees", "Departments"]);
     }
+
+    #[test]
+    fn japanese_table_name() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = read_catalog(&mut reader).unwrap();
+        let jp_table = catalog.iter().find(|e| e.name == "jp_テーブル2");
+        assert!(
+            jp_table.is_some(),
+            "catalog should contain jp_テーブル2, found: {:?}",
+            catalog.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(jp_table.unwrap().object_type, ObjectType::Table);
+    }
 }

@@ -1464,6 +1464,44 @@ mod tests {
     // ========================================================================
 
     #[test]
+    fn japanese_identifiers_sqlite() {
+        let d = sqlite();
+        let tdef = table(
+            "jp_テーブル2",
+            vec![
+                col_with_num("ID", ColumnType::Long, 0, column_flags::FIXED | column_flags::AUTO_LONG, 0, 0, 1),
+                col_with_num("商品名", ColumnType::Text, 255, column_flags::NULLABLE, 0, 0, 2),
+                col_with_num("単価", ColumnType::Long, 0, column_flags::NULLABLE, 0, 0, 3),
+                col_with_num("個数", ColumnType::Long, 0, column_flags::NULLABLE, 0, 0, 4),
+            ],
+            vec![index(
+                "PrimaryKey",
+                &[1],
+                index_flags::UNIQUE | index_flags::REQUIRED,
+                index_type::NORMAL,
+                0,
+            )],
+        );
+        let result = generate_create_table(&*d, &tdef, &[]);
+        assert!(
+            result.contains("\"jp_テーブル2\""),
+            "should quote Japanese table name, got:\n{result}"
+        );
+        assert!(
+            result.contains("\"商品名\""),
+            "should quote Japanese column name 商品名, got:\n{result}"
+        );
+        assert!(
+            result.contains("\"単価\""),
+            "should quote Japanese column name 単価, got:\n{result}"
+        );
+        assert!(
+            result.contains("\"個数\""),
+            "should quote Japanese column name 個数, got:\n{result}"
+        );
+    }
+
+    #[test]
     fn foreign_key_multi_column() {
         let d = postgres();
         let rels = [relationship(

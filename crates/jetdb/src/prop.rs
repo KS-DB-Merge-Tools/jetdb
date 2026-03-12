@@ -982,6 +982,27 @@ mod tests {
     }
 
     #[test]
+    fn japanese_object_properties() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_object_properties(&mut reader, "jp_テーブル2").unwrap();
+        assert_eq!(props.object_name, "jp_テーブル2");
+        assert_has_properties(&props);
+
+        // Column property maps should contain 商品名
+        let col_maps: Vec<&PropertyMap> = props
+            .maps
+            .iter()
+            .filter(|m| m.map_type == PropMapType::Column)
+            .collect();
+        let col_names: Vec<&str> = col_maps.iter().map(|m| m.name.as_str()).collect();
+        assert!(
+            col_names.contains(&"商品名"),
+            "should have column property map for 商品名, found: {col_names:?}"
+        );
+    }
+
+    #[test]
     fn parse_value_chunk_too_short() {
         let names: Vec<String> = vec![];
         let chunk = vec![0x01, 0x02]; // chunk_data < 4 bytes

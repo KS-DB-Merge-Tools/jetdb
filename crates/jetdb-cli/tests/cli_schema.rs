@@ -40,7 +40,7 @@ fn schema_single_table_columns() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Verify specific columns and types
-    assert!(stdout.contains("A"), "should contain column A");
+    assert!(stdout.contains("A  Text(100)"), "should contain column A with type");
     assert!(stdout.contains("Text(100)"), "should contain Text(100)");
     assert!(stdout.contains("B"), "should contain column B");
     assert!(stdout.contains("Text(200)"), "should contain Text(200)");
@@ -246,24 +246,6 @@ fn schema_nonexistent_file() {
 // ---------------------------------------------------------------------------
 // Error: nonexistent table with specific message
 // ---------------------------------------------------------------------------
-
-#[test]
-fn schema_nonexistent_table() {
-    let path = skip_if_missing!("V2003/testV2003.mdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "NoSuchTable"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        !output.status.success(),
-        "should fail for nonexistent table"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("jetdb:"),
-        "stderr should contain 'jetdb:' prefix, got: {stderr}"
-    );
-}
 
 #[test]
 fn schema_nonexistent_table_msg() {

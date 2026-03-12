@@ -245,6 +245,10 @@ fn queries_list_jet3() {
         stdout.contains("SelectQuery"),
         "should contain SelectQuery, got: {stdout}"
     );
+    assert!(
+        stdout.contains("UnionQuery"),
+        "should contain UnionQuery, got: {stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -273,6 +277,10 @@ fn queries_list_v2010() {
     assert!(
         stdout.contains("SelectQuery"),
         "should contain SelectQuery, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("UnionQuery"),
+        "should contain UnionQuery, got: {stdout}"
     );
 }
 

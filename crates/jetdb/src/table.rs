@@ -1146,6 +1146,25 @@ mod tests {
     }
 
     #[test]
+    fn japanese_column_names() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let tdef = assert_user_table_indexes(&path, "jp_テーブル2");
+        let col_names: Vec<&str> = tdef.columns.iter().map(|c| c.name.as_str()).collect();
+        assert!(
+            col_names.contains(&"商品名"),
+            "should contain column 商品名, found: {col_names:?}"
+        );
+        assert!(
+            col_names.contains(&"単価"),
+            "should contain column 単価, found: {col_names:?}"
+        );
+        assert!(
+            col_names.contains(&"個数"),
+            "should contain column 個数, found: {col_names:?}"
+        );
+    }
+
+    #[test]
     fn build_index_defs_name_missing_uses_default() {
         // More logical indexes than names → fallback to empty string
         let logical = vec![
