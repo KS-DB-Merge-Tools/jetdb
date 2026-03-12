@@ -4,7 +4,9 @@ description: >
   Microsoft Access データベース (.mdb/.accdb) の読み取り専用 CLI。
   テーブル一覧、スキーマ表示、CSV エクスポート、DDL 生成
   (SQLite/PostgreSQL/MySQL/Access)、VBA ソースコード抽出、
-  保存済みクエリの SQL 表示、オブジェクトプロパティ表示が可能。
+  保存済みクエリの SQL 表示、オブジェクトプロパティ表示、
+  フォーム/レポートのデザインプロパティ表示（RecordSource、
+  ControlSource、イベント等）が可能。
   Jet3 (Access 97) から ACE17 (Access 2019) まで対応。
   パスワード保護・暗号化された .accdb ファイルにも対応。
   Access から SQL への移行、.mdb ファイルからのデータ抽出、
@@ -126,6 +128,42 @@ jetdb vba list -1 <FILE>                       # 1行1件
 jetdb vba show <FILE> <MODULE_NAME>            # ソースコード全体を出力
 ```
 
+### form — フォーム/レポート
+
+```
+jetdb form list <FILE>                       # スペース区切り、ソート済み
+jetdb form list -1 <FILE>                    # 1行1件
+jetdb form list --forms-only <FILE>          # フォームのみ
+jetdb form list --reports-only <FILE>        # レポートのみ
+jetdb form dump <FILE> <NAME>                # Blob バイナリを stdout へダンプ
+jetdb form dump -s typeinfo <FILE> <NAME>    # TypeInfo ストリームをダンプ
+jetdb form controls <FILE> <NAME>            # コントロール一覧（名前、型、インデックス）
+jetdb form props <FILE> <NAME>               # フォーム/コントロールのプロパティ表示
+```
+
+`form list` は MSysAccessStorage からフォーム/レポート名を一覧表示。
+`form dump` は生バイナリストリーム（blob, typeinfo, propdata, blobdelta）を出力。
+`form controls` は TypeInfo をパースしてコントロール名、型コード（16進）、インデックスを表示。
+`form props` は Blob バイナリをパースしてフォーム自体と各コントロールのプロパティを表示:
+RecordSource、ControlSource、Filter、Caption、FontName、Format、イベント（OnClick 等）。
+
+出力例:
+
+```
+$ jetdb form props data.accdb F_クライアント一覧
+Form: F_クライアント一覧
+
+  Form Properties:
+    RecordSource  SELECT * FROM T_クライアント ORDER BY ID;
+    Filter        ([ID] > 0)
+    FontName      ＭＳ Ｐゴシック
+
+  Control: Txt_名前 (0x126D)
+    Name           Txt_名前
+    ControlSource  名前
+    FontName       Meiryo UI
+```
+
 ### prop — オブジェクトプロパティ
 
 ```
@@ -186,10 +224,19 @@ jetdb queries list -1 data.mdb | while read -r q; do
 done
 ```
 
+### フォームデザインの調査
+
+```
+jetdb form list data.accdb                   # 全フォーム/レポートを一覧
+jetdb form props data.accdb F_メイン         # プロパティを表示
+jetdb form controls data.accdb F_メイン      # コントロールを一覧
+```
+
 ## エラー動作
 
 - ファイルが見つからない / 読み取り不可 → exit 1
 - `show` コマンドでテーブル/クエリ/モジュールが見つからない → exit 1
 - パスワードが必要だが未指定 → exit 1, `PasswordRequired`
 - パスワードが不正 → exit 1, `InvalidPassword`
+- `form dump/controls/props` でフォーム/レポートが見つからない → exit 1
 - `list` でデータなし → exit 0, stdout は空

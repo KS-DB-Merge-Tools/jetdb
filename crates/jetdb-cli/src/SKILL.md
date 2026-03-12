@@ -4,7 +4,9 @@ description: >
   Read-only CLI for Microsoft Access databases (.mdb/.accdb).
   List tables, show schemas, export rows as CSV, generate DDL
   (SQLite/PostgreSQL/MySQL/Access), extract VBA source code,
-  show saved query SQL, and view object properties.
+  show saved query SQL, view object properties, and inspect
+  form/report design properties (RecordSource, ControlSource,
+  events, etc.).
   Supports Jet3 (Access 97) through ACE17 (Access 2019),
   including password-protected and encrypted .accdb files.
   Use when migrating Access to SQL, extracting data from .mdb files,
@@ -126,6 +128,42 @@ jetdb vba list -1 <FILE>                       # One per line
 jetdb vba show <FILE> <MODULE_NAME>            # Print full source code
 ```
 
+### form — Forms and reports
+
+```
+jetdb form list <FILE>                       # Space-separated, sorted
+jetdb form list -1 <FILE>                    # One per line
+jetdb form list --forms-only <FILE>          # Forms only
+jetdb form list --reports-only <FILE>        # Reports only
+jetdb form dump <FILE> <NAME>                # Dump Blob binary to stdout
+jetdb form dump -s typeinfo <FILE> <NAME>    # Dump TypeInfo stream
+jetdb form controls <FILE> <NAME>            # List controls (name, type, index)
+jetdb form props <FILE> <NAME>               # Show form/control properties
+```
+
+`form list` shows form and report names from MSysAccessStorage.
+`form dump` outputs raw binary streams (blob, typeinfo, propdata, blobdelta).
+`form controls` parses TypeInfo to show control names, type codes (hex), and indexes.
+`form props` parses the Blob binary to show properties for the form itself and each control:
+RecordSource, ControlSource, Filter, Caption, FontName, Format, events (OnClick, etc.).
+
+Output example:
+
+```
+$ jetdb form props data.accdb F_Customers
+Form: F_Customers
+
+  Form Properties:
+    RecordSource  SELECT * FROM Customers ORDER BY ID;
+    Filter        ([Active] = True)
+    FontName      MS UI Gothic
+
+  Control: Txt_Name (0x126D)
+    Name           Txt_Name
+    ControlSource  Name
+    FontName       Meiryo UI
+```
+
 ### prop — Object properties
 
 ```
@@ -186,10 +224,19 @@ jetdb queries list -1 data.mdb | while read -r q; do
 done
 ```
 
+### Inspect form design
+
+```
+jetdb form list data.accdb                   # List all forms/reports
+jetdb form props data.accdb F_Main           # Show properties
+jetdb form controls data.accdb F_Main        # List controls
+```
+
 ## Error Behavior
 
 - File not found / unreadable → exit 1
 - Table/query/module not found on `show` commands → exit 1
 - Password required but missing → exit 1, `PasswordRequired`
 - Wrong password → exit 1, `InvalidPassword`
+- Form/report not found on `form dump/controls/props` → exit 1
 - `list` with no data → exit 0, empty stdout
