@@ -1565,4 +1565,75 @@ mod tests {
         // Report label too
         assert_eq!(control_type_name(0x1B64), Some("Label"));
     }
+
+    // -- BlobValue Display: Double and Guid -----------------------------------
+
+    #[test]
+    fn blob_value_display_double_and_guid() {
+        assert_eq!(format!("{}", BlobValue::Double(1.23)), "1.23");
+        assert_eq!(format!("{}", BlobValue::Guid("{ABC}".into())), "{ABC}");
+    }
+
+    // -- parse_section_props: type 0x06 / 0x08 / 0x04 ------------------------
+
+    #[test]
+    fn parse_section_props_type_06_long() {
+        // Type 0x06: 6 bytes data, no trailer. Total entry = 20 bytes.
+        let mut data = Vec::new();
+        // 14-byte header: prop_id=0x0099, type=0x06, B=0, C=0
+        data.extend_from_slice(&0x0099u16.to_le_bytes());
+        data.extend_from_slice(&0x00000006u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes()); // B
+        data.extend_from_slice(&0u32.to_le_bytes()); // C
+        // 6 bytes data: value 42 as i32 + 2 padding bytes
+        data.extend_from_slice(&42i32.to_le_bytes());
+        data.extend_from_slice(&[0x00, 0x00]);
+
+        let props = parse_section_props(&data, 0, data.len());
+        assert_eq!(props.len(), 1);
+        assert_eq!(props[0].prop_id, 0x0099);
+        assert!(matches!(props[0].value, BlobValue::Long(42)));
+    }
+
+    #[test]
+    fn parse_section_props_type_08_double() {
+        // Type 0x08: 8 bytes data + 4 byte trailer. Total entry = 26 bytes.
+        let mut data = Vec::new();
+        // 14-byte header: prop_id=0x00AA, type=0x08, B=0, C=0
+        data.extend_from_slice(&0x00AAu16.to_le_bytes());
+        data.extend_from_slice(&0x00000008u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes()); // B
+        data.extend_from_slice(&0u32.to_le_bytes()); // C
+        // 8 bytes data: f64 value 1.23
+        data.extend_from_slice(&1.23f64.to_le_bytes());
+        // 4 byte trailer
+        data.extend_from_slice(&[0x00; 4]);
+
+        let props = parse_section_props(&data, 0, data.len());
+        assert_eq!(props.len(), 1);
+        assert_eq!(props[0].prop_id, 0x00AA);
+        match &props[0].value {
+            BlobValue::Double(v) => assert!((v - 1.23).abs() < f64::EPSILON),
+            other => panic!("expected Double, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_section_props_type_04_color() {
+        // Type 0x04: 8 bytes data (4 color + 4 extra), no trailer. Total entry = 22 bytes.
+        let mut data = Vec::new();
+        // 14-byte header: prop_id=0x00BB, type=0x04, B=0, C=0
+        data.extend_from_slice(&0x00BBu16.to_le_bytes());
+        data.extend_from_slice(&0x00000004u32.to_le_bytes());
+        data.extend_from_slice(&0u32.to_le_bytes()); // B
+        data.extend_from_slice(&0u32.to_le_bytes()); // C
+        // 8 bytes data: color 0x00FF0000 + 4 extra bytes
+        data.extend_from_slice(&0x00FF0000u32.to_le_bytes());
+        data.extend_from_slice(&[0x00; 4]);
+
+        let props = parse_section_props(&data, 0, data.len());
+        assert_eq!(props.len(), 1);
+        assert_eq!(props[0].prop_id, 0x00BB);
+        assert!(matches!(props[0].value, BlobValue::Color(0x00FF0000)));
+    }
 }

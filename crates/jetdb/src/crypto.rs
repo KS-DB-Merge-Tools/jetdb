@@ -1643,4 +1643,318 @@ mod tests {
             "expected invalid verifier hash size error, got: {result:?}"
         );
     }
+
+    // -- AES key size coverage (synthetic roundtrip tests) ---------------------
+
+    #[test]
+    fn aes_cbc_decrypt_192_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes192CbcEnc = cbc::Encryptor<aes::Aes192>;
+
+        let key = [0x42u8; 24];
+        let iv = [0u8; 16];
+        let plaintext = [0xBBu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes192CbcEnc::new(&key.into(), &iv.into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_cbc_decrypt(&key, &iv, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_cbc_decrypt_256_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+
+        let key = [0x42u8; 32];
+        let iv = [0u8; 16];
+        let plaintext = [0xCCu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes256CbcEnc::new(&key.into(), &iv.into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_cbc_decrypt(&key, &iv, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_ecb_decrypt_128_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
+
+        let key = [0x11u8; 16];
+        let plaintext = [0xAAu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes128EcbEnc::new(key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_ecb_decrypt(&key, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_ecb_decrypt_192_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes192EcbEnc = ecb::Encryptor<aes::Aes192>;
+
+        let key = [0x22u8; 24];
+        let plaintext = [0xBBu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes192EcbEnc::new(key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_ecb_decrypt(&key, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_ecb_decrypt_256_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes256EcbEnc = ecb::Encryptor<aes::Aes256>;
+
+        let key = [0x33u8; 32];
+        let plaintext = [0xCCu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes256EcbEnc::new(key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_ecb_decrypt(&key, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    // -- Page decryption with different key sizes (synthetic) ------------------
+
+    #[test]
+    fn decrypt_page_agile_192() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes192CbcEnc = cbc::Encryptor<aes::Aes192>;
+
+        let db_key = vec![0x55u8; 24]; // AES-192
+        let salt = vec![0xAAu8; 16];
+        let params = AgileParams {
+            key_bits: 192,
+            block_size: 16,
+            hash_algorithm: HashAlgorithm::Sha256,
+            salt_value: salt.clone(),
+            pe_spin_count: 0,
+            pe_salt_value: vec![0u8; 16],
+            pe_hash_algorithm: HashAlgorithm::Sha256,
+            pe_key_bits: 192,
+            pe_block_size: 16,
+            encrypted_verifier_hash_input: vec![0u8; 16],
+            encrypted_verifier_hash_value: vec![0u8; 32],
+            encrypted_key_value: vec![0u8; 32],
+        };
+        let encoding_key: u32 = 0x12345678;
+        let page: u32 = 1;
+
+        // Compute the IV that decrypt_page_agile will use
+        let block_key = page ^ encoding_key;
+        let mut iv_input = Vec::new();
+        iv_input.extend_from_slice(&salt);
+        iv_input.extend_from_slice(&block_key.to_le_bytes());
+        let iv_hash = hash_bytes(HashAlgorithm::Sha256, &iv_input);
+        let iv = make_iv(&iv_hash, 16);
+
+        // Encrypt known plaintext with the same key/IV
+        let plaintext = vec![0xDDu8; 32];
+        let mut encrypted = plaintext.clone();
+        let mut iv16 = [0u8; 16];
+        iv16.copy_from_slice(&iv[..16]);
+        let mut key24 = [0u8; 24];
+        key24.copy_from_slice(&db_key);
+        Aes192CbcEnc::new(&key24.into(), &iv16.into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        // Decrypt and verify
+        decrypt_page_agile(&mut encrypted, &params, &db_key, encoding_key, page).unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_agile_256() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+
+        let db_key = vec![0x66u8; 32]; // AES-256
+        let salt = vec![0xBBu8; 16];
+        let params = AgileParams {
+            key_bits: 256,
+            block_size: 16,
+            hash_algorithm: HashAlgorithm::Sha256,
+            salt_value: salt.clone(),
+            pe_spin_count: 0,
+            pe_salt_value: vec![0u8; 16],
+            pe_hash_algorithm: HashAlgorithm::Sha256,
+            pe_key_bits: 256,
+            pe_block_size: 16,
+            encrypted_verifier_hash_input: vec![0u8; 16],
+            encrypted_verifier_hash_value: vec![0u8; 32],
+            encrypted_key_value: vec![0u8; 32],
+        };
+        let encoding_key: u32 = 0xDEADBEEF;
+        let page: u32 = 2;
+
+        let block_key = page ^ encoding_key;
+        let mut iv_input = Vec::new();
+        iv_input.extend_from_slice(&salt);
+        iv_input.extend_from_slice(&block_key.to_le_bytes());
+        let iv_hash = hash_bytes(HashAlgorithm::Sha256, &iv_input);
+        let iv = make_iv(&iv_hash, 16);
+
+        let plaintext = vec![0xEEu8; 32];
+        let mut encrypted = plaintext.clone();
+        let mut iv16 = [0u8; 16];
+        iv16.copy_from_slice(&iv[..16]);
+        let mut key32 = [0u8; 32];
+        key32.copy_from_slice(&db_key);
+        Aes256CbcEnc::new(&key32.into(), &iv16.into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_agile(&mut encrypted, &params, &db_key, encoding_key, page).unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_standard_aes_128() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
+
+        let iter_hash = hash_bytes(HashAlgorithm::Sha1, b"test_key_material");
+        let encoding_key = [0x11u8; 4];
+        let page: u32 = 1;
+        let key_size: u32 = 128;
+
+        // Derive the key that decrypt_page_standard_aes will use
+        let block_bytes = apply_page_number(&encoding_key, page);
+        let enc_key = derive_standard_aes_key(&iter_hash, &block_bytes, 16);
+
+        let plaintext = vec![0xAAu8; 32];
+        let mut encrypted = plaintext.clone();
+        Aes128EcbEnc::new(enc_key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_standard_aes(&mut encrypted, &iter_hash, &encoding_key, key_size, page)
+            .unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_standard_aes_192() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes192EcbEnc = ecb::Encryptor<aes::Aes192>;
+
+        let iter_hash = hash_bytes(HashAlgorithm::Sha1, b"test_key_192");
+        let encoding_key = [0x22u8; 4];
+        let page: u32 = 3;
+        let key_size: u32 = 192;
+
+        let block_bytes = apply_page_number(&encoding_key, page);
+        let enc_key = derive_standard_aes_key(&iter_hash, &block_bytes, 24);
+
+        let plaintext = vec![0xBBu8; 32];
+        let mut encrypted = plaintext.clone();
+        Aes192EcbEnc::new(enc_key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_standard_aes(&mut encrypted, &iter_hash, &encoding_key, key_size, page)
+            .unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_standard_aes_256() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes256EcbEnc = ecb::Encryptor<aes::Aes256>;
+
+        let iter_hash = hash_bytes(HashAlgorithm::Sha1, b"test_key_256");
+        let encoding_key = [0x33u8; 4];
+        let page: u32 = 5;
+        let key_size: u32 = 256;
+
+        let block_bytes = apply_page_number(&encoding_key, page);
+        let enc_key = derive_standard_aes_key(&iter_hash, &block_bytes, 32);
+
+        let plaintext = vec![0xCCu8; 32];
+        let mut encrypted = plaintext.clone();
+        Aes256EcbEnc::new(enc_key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_standard_aes(&mut encrypted, &iter_hash, &encoding_key, key_size, page)
+            .unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    // -- Hash algorithm coverage (SHA384, SHA512) -----------------------------
+
+    #[test]
+    fn hash_bytes_sha384() {
+        let result = hash_bytes(HashAlgorithm::Sha384, b"hello");
+        assert_eq!(result.len(), 48);
+        assert_eq!(
+            hex(&result),
+            "59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f"
+        );
+    }
+
+    #[test]
+    fn hash_bytes_sha512() {
+        let result = hash_bytes(HashAlgorithm::Sha512, b"hello");
+        assert_eq!(result.len(), 64);
+        assert_eq!(
+            hex(&result),
+            "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043"
+        );
+    }
+
+    // -- iterate_hash_sha1 with iterations > 0 --------------------------------
+
+    #[test]
+    fn iterate_hash_sha1_with_iterations() {
+        let base = hash_bytes(HashAlgorithm::Sha1, b"test");
+        let result_0 = iterate_hash_sha1(&base, 0);
+        assert_eq!(result_0, base, "0 iterations should return base_hash unchanged");
+
+        let result_1 = iterate_hash_sha1(&base, 1);
+        assert_ne!(result_1, base, "1 iteration should differ from base_hash");
+        assert_eq!(result_1.len(), 20, "SHA1 output is always 20 bytes");
+
+        // Deterministic
+        let result_1b = iterate_hash_sha1(&base, 1);
+        assert_eq!(result_1, result_1b);
+
+        // More iterations produce different results
+        let result_10 = iterate_hash_sha1(&base, 10);
+        assert_ne!(result_10, result_1);
+    }
+
+    // -- derive_key with SHA384/SHA512 ----------------------------------------
+
+    #[test]
+    fn derive_key_sha384() {
+        let key = derive_key("pw", &[0u8; 16], 10, &[0xAA; 8], HashAlgorithm::Sha384, 192);
+        assert_eq!(key.len(), 24); // 192 bits / 8
+    }
+
+    #[test]
+    fn derive_key_sha512() {
+        let key = derive_key("pw", &[0u8; 16], 10, &[0xAA; 8], HashAlgorithm::Sha512, 256);
+        assert_eq!(key.len(), 32); // 256 bits / 8
+    }
 }
