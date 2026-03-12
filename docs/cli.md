@@ -40,14 +40,15 @@ Jet4 (Access 2000/2003)
 
 #### Version list
 
-Short name   Details
-JET3         Jet3 (Access 97)
-JET4         Jet4 (Access 2000/2003)
-ACE12        ACE12 (Access 2007)
-ACE14        ACE14 (Access 2010)
-ACE15        ACE15 (Access 2013)
-ACE16        ACE16 (Access 2016)
-ACE17        ACE17 (Access 2019)
+| Short name | Details |
+|------------|---------|
+| JET3 | Jet3 (Access 97) |
+| JET4 | Jet4 (Access 2000/2003) |
+| ACE12 | ACE12 (Access 2007) |
+| ACE14 | ACE14 (Access 2010) |
+| ACE15 | ACE15 (Access 2013) |
+| ACE16 | ACE16 (Access 2016) |
+| ACE17 | ACE17 (Access 2019) |
 
 ### tables — List tables
 
@@ -97,9 +98,10 @@ table	Table2
 
 Type names displayed with -T:
 
-Name          Condition
-table         Regular user table
-systable      Table with SYSTEM or HIDDEN flag
+| Name | Condition |
+|------|-----------|
+| table | Regular user table |
+| systable | Table with SYSTEM or HIDDEN flag |
 
 ### schema — Show table schema
 
@@ -192,11 +194,12 @@ ALTER TABLE "Table1" ADD CONSTRAINT "Table3Table1"
 
 #### DDL dialect list
 
-Name       Description
-sqlite     SQLite
-postgres   PostgreSQL
-mysql      MySQL
-access     Access SQL
+| Name | Description |
+|------|-------------|
+| sqlite | SQLite |
+| postgres | PostgreSQL |
+| mysql | MySQL |
+| access | Access SQL |
 
 ### queries — Manage saved queries
 
@@ -499,8 +502,9 @@ A,B,C,D,E,F,G,H,I
 
 #### Binary output modes
 
-Name     Description
-strip    Omit binary data (empty string)
-raw      Output as raw bytes (lossy UTF-8)
-octal    Each byte as \NNN octal escape
-hex      Each byte as lowercase hex (default)
+| Name | Description |
+|------|-------------|
+| strip | Omit binary data (empty string) |
+| raw | Output as raw bytes (lossy UTF-8) |
+| octal | Each byte as \NNN octal escape |
+| hex | Each byte as lowercase hex (default) |

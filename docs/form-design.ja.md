@@ -4,7 +4,7 @@ Access データベース (.mdb/.accdb) におけるフォーム/レポートの
 
 ## 概要
 
-フォーム/レポートのデザイン定義は `MSysAccessStorage` システムテーブル（Jet4/ACE 形式）に格納される。バイナリフォーマットの公開仕様は存在せず、バイナリレベルで直接読み取りに成功している OSS も存在しない。
+フォーム/レポートのデザイン定義は `MSysAccessStorage` システムテーブル（Jet4/ACE 形式）に格納される。バイナリフォーマットの公開仕様は存在しない。
 
 ## MSysAccessStorage 内の格納構造
 
@@ -97,45 +97,45 @@ IKP データベース（81フォーム/レポート）の全コントロール�
 
 フォーム系コントロール:
 
-コード    名称            出現数   説明
-------  --------------  ------  --------------------------
-0x066A  CheckBox           95   チェックボックス
-0x0A7A  ToggleButton        2   トグルボタン
-0x0B68  CommandButton     681   コマンドボタン
-0x0C64  Label             289   ラベル（独立）
-0x0D64  Label             662   ラベル（コントロール付属）
-0x0E65  Rectangle         111   四角形
-0x0F67  Image               1   イメージ
-0x126D  TextBox           735   テキストボックス
-0x136F  ComboBox          140   コンボボックス
-0x1470  SubForm             9   サブフォーム
-0x1666  Line              168   直線
-0x1898  Detail             63   詳細セクション
-0x1899  FormHeader         63   フォームヘッダーセクション
-0x189A  FormFooter         63   フォームフッターセクション
-0x1EFF  (不明)            318   計算フィールド/システムフィールドに多い
-0x247F  EmptyCell           -   空白セル（レイアウト用）
+| コード | 名称 | 出現数 | 説明 |
+|--------|------|--------|------|
+| 0x066A | CheckBox | 95 | チェックボックス |
+| 0x0A7A | ToggleButton | 2 | トグルボタン |
+| 0x0B68 | CommandButton | 681 | コマンドボタン |
+| 0x0C64 | Label | 289 | ラベル（独立） |
+| 0x0D64 | Label | 662 | ラベル（コントロール付属） |
+| 0x0E65 | Rectangle | 111 | 四角形 |
+| 0x0F67 | Image | 1 | イメージ |
+| 0x126D | TextBox | 735 | テキストボックス |
+| 0x136F | ComboBox | 140 | コンボボックス |
+| 0x1470 | SubForm | 9 | サブフォーム |
+| 0x1666 | Line | 168 | 直線 |
+| 0x1898 | Detail | 63 | 詳細セクション |
+| 0x1899 | FormHeader | 63 | フォームヘッダーセクション |
+| 0x189A | FormFooter | 63 | フォームフッターセクション |
+| 0x1EFF | (不明) | 318 | 計算フィールド/システムフィールドに多い |
+| 0x247F | EmptyCell | - | 空白セル（レイアウト用） |
 
 レポート系コントロール:
 
-コード    名称            出現数   説明
-------  --------------  ------  --------------------------
-0x1B64  Label             333   ラベル
-0x1B65  Rectangle          14   四角形
-0x1B66  Line               49   直線
-0x1B67  Image               1   イメージ
-0x1B68  CommandButton      14   コマンドボタン
-0x1B6A  CheckBox            3   チェックボックス
-0x1B6D  TextBox           554   テキストボックス
-0x1B6F  ComboBox           32   コンボボックス
-0x1B70  SubReport           2   サブレポート
-0x1998  Detail             18   詳細セクション
-0x1999  ReportHeader       18   レポートヘッダーセクション
-0x199A  ReportFooter       18   レポートフッターセクション
-0x199D  GroupHeader        29   グループヘッダーセクション
-0x199E  GroupFooter        15   グループフッターセクション
-0x1F9B  PageHeader         18   ページヘッダーセクション
-0x1F9C  PageFooter         18   ページフッターセクション
+| コード | 名称 | 出現数 | 説明 |
+|--------|------|--------|------|
+| 0x1B64 | Label | 333 | ラベル |
+| 0x1B65 | Rectangle | 14 | 四角形 |
+| 0x1B66 | Line | 49 | 直線 |
+| 0x1B67 | Image | 1 | イメージ |
+| 0x1B68 | CommandButton | 14 | コマンドボタン |
+| 0x1B6A | CheckBox | 3 | チェックボックス |
+| 0x1B6D | TextBox | 554 | テキストボックス |
+| 0x1B6F | ComboBox | 32 | コンボボックス |
+| 0x1B70 | SubReport | 2 | サブレポート |
+| 0x1998 | Detail | 18 | 詳細セクション |
+| 0x1999 | ReportHeader | 18 | レポートヘッダーセクション |
+| 0x199A | ReportFooter | 18 | レポートフッターセクション |
+| 0x199D | GroupHeader | 29 | グループヘッダーセクション |
+| 0x199E | GroupFooter | 15 | グループフッターセクション |
+| 0x1F9B | PageHeader | 18 | ページヘッダーセクション |
+| 0x1F9C | PageFooter | 18 | ページフッターセクション |
 
 ※ フォーム系とレポート系で対になる構造（例: 0x0C64 Label ↔ 0x1B64 Label）
 ※ 0x1EFF は正体不明。create_at, updated_at 等のシステム的フィールドに多く出現
@@ -190,38 +190,6 @@ type の値:
 - 0x09 — GUID (16B)
 - 0x0B — Binary (可変長)
 
-### 判明しているプロパティ ID マッピング
-
-```
-ID      プロパティ名      カテゴリ
-------  ----------------  ------------------
-0x0011  Caption           コントロール表示テキスト
-0x0012  ColumnWidths      コンボボックス列幅
-0x0014  Name              コントロール名
-0x001B  ControlSource     フィールドバインド先
-0x0022  FontName          フォント名
-0x0026  Format            表示書式
-0x005B  RowSource         コンボボックスデータソース (SQL)
-0x005D  RowSourceType     データソース種別 (Table/Query)
-0x0068  OnKeyDown         キークリック時
-0x0069  OnKeyUp           キー解放時
-0x006A  OnKeyPress        キー入力時
-0x006B  OnMouseDown       マウスボタンクリック時
-0x006C  OnMouseUp         マウスボタン解放時
-0x006D  OnMouseMove       マウスボタン移動時
-0x0073  OnGotFocus        フォーカス取得後
-0x0074  OnLostFocus       フォーカス喪失後
-0x007E  OnClick           クリック時
-0x009C  RecordSource      フォーム/レポートのデータソース (SQL)
-0x00A0  FontName          フォームレベルフォント名
-0x00DE  OnEnter           フォーカス取得時
-0x00DF  OnExit            フォーカス喪失時
-0x00E0  OnDblClick        ダブルクリック時
-0x00F5  Filter            フィルタ条件
-0x010A  LabelType         ラベル種別
-0x015A  InputMask         入力マスク
-```
-
 ### セクション境界
 
 - フォームレベルプロパティとコントロール別プロパティの境界は、バイナリデータ（レイアウト情報等）を挟んで分かれている
@@ -237,94 +205,68 @@ ID      プロパティ名      カテゴリ
 - **レイアウト座標・プリンタ設定**: Blob 内の非プロパティ領域に格納されており、取得対象外
 - **Jet3 (Access 97)**: MSysAccessStorage ではなく MSysAccessObjects に格納される異なるフォーマットのため非対応
 
-### prop_id の対応状況
+### prop_id マッピング
 
-対応済みの prop_id は名前で表示し、未対応のものは `0xXXXX` 形式で数値表示する。新しい prop_id が判明次第、随時追加していく方針。
+判明済みの prop_id は名前で表示し、未知のものは `0xXXXX` 形式で数値表示する。
 
-**対応済み:**
+| ID | プロパティ名 | 用途 |
+|--------|--------------|------|
+| 0x0011 | Caption | コントロール表示テキスト |
+| 0x0012 | ColumnWidths | コンボボックス列幅 |
+| 0x0014 | Name | コントロール名 |
+| 0x001B | ControlSource | フィールドバインド先 |
+| 0x0022 | FontName | フォント名（コントロールレベル） |
+| 0x0026 | Format | 表示書式 |
+| 0x005B | RowSource | コンボボックスデータソース (SQL) |
+| 0x005D | RowSourceType | データソース種別 (Table/Query) |
+| 0x0068 | OnKeyDown | キークリック時 |
+| 0x0069 | OnKeyUp | キー解放時 |
+| 0x006A | OnKeyPress | キー入力時 |
+| 0x006B | OnMouseDown | マウスボタンクリック時 |
+| 0x006C | OnMouseUp | マウスボタン解放時 |
+| 0x006D | OnMouseMove | マウスボタン移動時 |
+| 0x0073 | OnGotFocus | フォーカス取得後 |
+| 0x0074 | OnLostFocus | フォーカス喪失後 |
+| 0x007E | OnClick | クリック時 |
+| 0x009C | RecordSource | フォーム/レポートのデータソース |
+| 0x00A0 | FontName | フォームレベルフォント名 |
+| 0x00DE | OnEnter | フォーカス取得時 |
+| 0x00DF | OnExit | フォーカス喪失時 |
+| 0x00E0 | OnDblClick | ダブルクリック時 |
+| 0x00F5 | Filter | フィルタ条件 |
+| 0x010A | LabelType | ラベル種別 |
+| 0x015A | InputMask | 入力マスク |
 
-ID      プロパティ名      用途
-------  ----------------  ------------------
-0x0011  Caption           コントロール表示テキスト
-0x0012  ColumnWidths      コンボボックス列幅
-0x0014  Name              コントロール名
-0x001B  ControlSource     フィールドバインド先
-0x0022  FontName          フォント名（コントロールレベル）
-0x0026  Format            表示書式
-0x005B  RowSource         コンボボックスデータソース (SQL)
-0x005D  RowSourceType     データソース種別 (Table/Query)
-0x0068  OnKeyDown         キークリック時
-0x0069  OnKeyUp           キー解放時
-0x006A  OnKeyPress        キー入力時
-0x006B  OnMouseDown       マウスボタンクリック時
-0x006C  OnMouseUp         マウスボタン解放時
-0x006D  OnMouseMove       マウスボタン移動時
-0x0073  OnGotFocus        フォーカス取得後
-0x0074  OnLostFocus       フォーカス喪失後
-0x007E  OnClick           クリック時
-0x009C  RecordSource      フォーム/レポートのデータソース
-0x00A0  FontName          フォームレベルフォント名
-0x00DE  OnEnter           フォーカス取得時
-0x00DF  OnExit            フォーカス喪失時
-0x00E0  OnDblClick        ダブルクリック時
-0x00F5  Filter            フィルタ条件
-0x010A  LabelType         ラベル種別
-0x015A  InputMask         入力マスク
+頻出する未知 ID:
 
-**未対応（出力で頻出する未知 ID の例）:**
-
-ID      出現コンテキスト（推定）
-------  --------------------------------
-0x0000  コントロール末尾に頻出
-0x0013  フォームレベル Bool
-0x001D  コントロール内
-0x0178  GUID（全コントロールに出現）
-0x024A  コントロール内 Short
-0x024C  コントロール内 Short
-0x0268  色系プロパティ
-0x0274  色系プロパティ
-0x01CA〜0x01D2  コントロール内 Short（連番で出現）
+| ID | 出現コンテキスト（推定） |
+|--------|------|
+| 0x0000 | コントロール末尾に頻出 |
+| 0x0013 | フォームレベル Bool |
+| 0x001D | コントロール内 |
+| 0x0178 | GUID（全コントロールに出現） |
+| 0x024A | コントロール内 Short |
+| 0x024C | コントロール内 Short |
+| 0x0268 | 色系プロパティ |
+| 0x0274 | 色系プロパティ |
+| 0x01CA〜0x01D2 | コントロール内 Short（連番で出現） |
 
 ### type の対応状況
 
-type    名前     データサイズ   対応状況
-------  -------  -----------  --------
-0x01    Bool     4B           対応済み
-0x02    Short    5B           対応済み
-0x03    Long     6B           対応済み
-0x04    Color    8B           対応済み
-0x06    (不明)   6B           対応済み（Long として解釈）
-0x08    Double   8B+4B trailer  対応済み
-0x09    GUID     16B+4B trailer 対応済み
-0x0A    Text     C bytes+4B trailer  対応済み（UTF-16LE）
-0x0B    Binary   C bytes+4B trailer  対応済み
-0x0C    Memo     C bytes+4B trailer  対応済み（UTF-16LE）
-0x05    (不明)   不明         未対応（遭遇時パース中断）
-0x07    (不明)   不明         未対応（遭遇時パース中断）
-
-## SaveAsText との関係
-
-`Application.SaveAsText` は Access COM 経由でフォーム定義をテキスト形式にエクスポートする機能。出力されるテキストには以下が含まれる:
-
-- `Begin Form` ... `End` のネスト構造
-- `ControlSource`, `RecordSource`, `Filter` 等のプロパティ
-- `OnClick ="[Event Procedure]"` 等のイベントバインディング
-- `CodeBehindForm` 以降に VBA ソースコード
-
-SaveAsText の出力は Blob バイナリを Access が内部的にデシリアライズした結果であり、Blob のバイナリ構造を理解する上での参考になる。ただし SaveAsText の実行には Access ランタイムが必要なため、jetdb（ファイル直接読み取り）では使用できない。
-
-## 先行事例
-
-フォーム/レポートのバイナリ定義を直接読み取りに成功している OSS は存在しない。
-
-| プロジェクト | 言語 | フォーム対応 |
-|---|---|---|
-| Jackcess | Java | 未対応。テーブル/クエリのみ |
-| MDB Tools | C | カタログで名前認識のみ |
-| access_parser | Python | Type=1(テーブル)のみ |
-| msaccess-vcs-addin | VBA | SaveAsText 経由（Access 必要） |
-
-MS-OFORMS 仕様は VBA UserForm 用であり、Access ネイティブフォームには適用不可。
+| type | 名前 | データサイズ | 対応状況 |
+|------|------|-------------|----------|
+| 0x01 | Bool | 4B | 対応済み |
+| 0x02 | Short | 5B | 対応済み |
+| 0x03 | Long | 6B | 対応済み |
+| 0x04 | Color | 8B | 対応済み |
+| 0x06 | (不明) | 6B | 対応済み（Long として解釈） |
+| 0x08 | Double | 8B+4B trailer | 対応済み |
+| 0x09 | GUID | 16B+4B trailer | 対応済み |
+| 0x0A | Text | C bytes+4B trailer | 対応済み（UTF-16LE） |
+| 0x0B | Binary | C bytes+4B trailer | 対応済み |
+| 0x0C | Memo | C bytes+4B trailer | 対応済み（UTF-16LE） |
+| 0x05 | (不明) | 不明 | 未対応（遭遇時パース中断） |
+| 0x07 | (不明) | 不明 | 未対応（遭遇時パース中断） |
 
 ## 参考リンク
 

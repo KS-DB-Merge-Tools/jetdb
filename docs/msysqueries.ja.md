@@ -8,47 +8,47 @@ Access データベース (.mdb/.accdb) における保存済みクエリの格�
 
 ## カラム構成
 
-カラム名      型        説明
-----------  --------  ------------------------------------------
-ObjectId    Long      クエリID（MSysObjects.Id との紐付け）
-Attribute   Byte      行の種別（後述）
-Order       Binary    同一 Attribute 内のソート順
-Name1       Text      テーブル名、パラメータ名等（Attribute 依存）
-Name2       Text      エイリアス等（Attribute 依存）
-Expression  Text      SQL 式（カラム式、JOIN 条件、WHERE 句等）
-Flag        Int       フラグ値（Attribute 依存）
-LvExtra     Long      追加データ（めったに使われない）
+| カラム名 | 型 | 説明 |
+|----------|------|------|
+| ObjectId | Long | クエリID（MSysObjects.Id との紐付け） |
+| Attribute | Byte | 行の種別（後述） |
+| Order | Binary | 同一 Attribute 内のソート順 |
+| Name1 | Text | テーブル名、パラメータ名等（Attribute 依存） |
+| Name2 | Text | エイリアス等（Attribute 依存） |
+| Expression | Text | SQL 式（カラム式、JOIN 条件、WHERE 句等） |
+| Flag | Int | フラグ値（Attribute 依存） |
+| LvExtra | Long | 追加データ（めったに使われない） |
 
 ## Attribute 定数
 
-値   定数名           説明                              Flag の意味
---  ---------------  --------------------------------  ---------------------------
-0   (ヘッダー)        クエリヘッダー行                    クエリフラグ（0 が多い）
-1   ATTR_TYPE        クエリ種別                          QueryType 値（下表参照）
-2   ATTR_PARAMETER   パラメータ定義                      パラメータのデータ型
-3   ATTR_FLAG        SELECT フラグ（DISTINCT 等）        ビットフラグ
-5   ATTR_TABLE       FROM 句テーブル                     -
-6   ATTR_COLUMN      SELECT 句カラム                     カラムフラグ
-7   ATTR_JOIN        JOIN 条件                           JOIN 種別
-8   ATTR_WHERE       WHERE 句                            -
-9   ATTR_GROUPBY     GROUP BY 句                         -
-10  ATTR_HAVING      HAVING 句                           -
-11  ATTR_ORDERBY     ORDER BY 句                         -
-255 (終端)           クエリ終端マーカー                   -
+| 値 | 定数名 | 説明 | Flag の意味 |
+|----|--------|------|-------------|
+| 0 | (ヘッダー) | クエリヘッダー行 | クエリフラグ（0 が多い） |
+| 1 | ATTR_TYPE | クエリ種別 | QueryType 値（下表参照） |
+| 2 | ATTR_PARAMETER | パラメータ定義 | パラメータのデータ型 |
+| 3 | ATTR_FLAG | SELECT フラグ（DISTINCT 等） | ビットフラグ |
+| 5 | ATTR_TABLE | FROM 句テーブル | - |
+| 6 | ATTR_COLUMN | SELECT 句カラム | カラムフラグ |
+| 7 | ATTR_JOIN | JOIN 条件 | JOIN 種別 |
+| 8 | ATTR_WHERE | WHERE 句 | - |
+| 9 | ATTR_GROUPBY | GROUP BY 句 | - |
+| 10 | ATTR_HAVING | HAVING 句 | - |
+| 11 | ATTR_ORDERBY | ORDER BY 句 | - |
+| 255 | (終端) | クエリ終端マーカー | - |
 
 ## QueryType 値（ATTR_TYPE の Flag）
 
-値  定数名          Access のクエリ種別
---  -------------  ----------------------
-1   Select         選択クエリ
-2   MakeTable      テーブル作成クエリ
-3   Append         追加クエリ
-4   Update         更新クエリ
-5   Delete         削除クエリ
-6   Crosstab       クロス集計クエリ
-7   Ddl            データ定義クエリ
-8   Passthrough    パススルークエリ
-9   Union          ユニオンクエリ
+| 値 | 定数名 | Access のクエリ種別 |
+|----|--------|---------------------|
+| 1 | Select | 選択クエリ |
+| 2 | MakeTable | テーブル作成クエリ |
+| 3 | Append | 追加クエリ |
+| 4 | Update | 更新クエリ |
+| 5 | Delete | 削除クエリ |
+| 6 | Crosstab | クロス集計クエリ |
+| 7 | Ddl | データ定義クエリ |
+| 8 | Passthrough | パススルークエリ |
+| 9 | Union | ユニオンクエリ |
 
 ## 埋め込みクエリ（~sq_ プレフィックス）
 
@@ -62,12 +62,12 @@ LvExtra     Long      追加データ（めったに使われない）
 
 種別コード:
 
-コード  意味                                     例
-------  ----------------------------------------  ----------------------------------------
-c       コントロールの RowSource                   ~sq_cF_請求書一覧~sq_ccmb_クライアント名検索
-d       レポートコントロールの DataSource           ~sq_dR_請求書~sq_dクライアントID
-f       フォーム/サブフォームの RecordSource        ~sq_fF_クライアント情報
-r       レポートの RecordSource                    ~sq_rR_請求書
+| コード | 意味 | 例 |
+|--------|------|-----|
+| c | コントロールの RowSource | ~sq_cF_請求書一覧~sq_ccmb_クライアント名検索 |
+| d | レポートコントロールの DataSource | ~sq_dR_請求書~sq_dクライアントID |
+| f | フォーム/サブフォームの RecordSource | ~sq_fF_クライアント情報 |
+| r | レポートの RecordSource | ~sq_rR_請求書 |
 
 ### ATTR_TYPE の欠落
 

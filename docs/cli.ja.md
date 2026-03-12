@@ -40,14 +40,15 @@ Jet4 (Access 2000/2003)
 
 #### バージョン一覧
 
-短縮名   詳細
-JET3    Jet3 (Access 97)
-JET4    Jet4 (Access 2000/2003)
-ACE12   ACE12 (Access 2007)
-ACE14   ACE14 (Access 2010)
-ACE15   ACE15 (Access 2013)
-ACE16   ACE16 (Access 2016)
-ACE17   ACE17 (Access 2019)
+| 短縮名 | 詳細 |
+|--------|------|
+| JET3 | Jet3 (Access 97) |
+| JET4 | Jet4 (Access 2000/2003) |
+| ACE12 | ACE12 (Access 2007) |
+| ACE14 | ACE14 (Access 2010) |
+| ACE15 | ACE15 (Access 2013) |
+| ACE16 | ACE16 (Access 2016) |
+| ACE17 | ACE17 (Access 2019) |
 
 ### tables — テーブル一覧の表示
 
@@ -97,9 +98,10 @@ table	Table2
 
 -T で表示される種別名:
 
-名前          条件
-table        通常のユーザーテーブル
-systable     SYSTEM または HIDDEN フラグ付きテーブル
+| 名前 | 条件 |
+|------|------|
+| table | 通常のユーザーテーブル |
+| systable | SYSTEM または HIDDEN フラグ付きテーブル |
 
 ### schema — テーブルスキーマの表示
 
@@ -192,11 +194,12 @@ ALTER TABLE "Table1" ADD CONSTRAINT "Table3Table1"
 
 #### DDL 方言一覧
 
-名前       説明
-sqlite     SQLite
-postgres   PostgreSQL
-mysql      MySQL
-access     Access SQL
+| 名前 | 説明 |
+|------|------|
+| sqlite | SQLite |
+| postgres | PostgreSQL |
+| mysql | MySQL |
+| access | Access SQL |
 
 ### queries — 保存済みクエリの管理
 
@@ -498,8 +501,9 @@ A,B,C,D,E,F,G,H,I
 
 #### バイナリ出力モード一覧
 
-名前     説明
-strip    バイナリデータを省略 (空文字列)
-raw      生バイトとして出力 (UTF-8 lossy)
-octal    各バイトを \NNN 形式の8進エスケープ
-hex      各バイトを小文字16進数で連結 (デフォルト)
+| 名前 | 説明 |
+|------|------|
+| strip | バイナリデータを省略 (空文字列) |
+| raw | 生バイトとして出力 (UTF-8 lossy) |
+| octal | 各バイトを \NNN 形式の8進エスケープ |
+| hex | 各バイトを小文字16進数で連結 (デフォルト) |
