@@ -568,21 +568,37 @@ fn parse_type_info(data: &[u8]) -> Result<Vec<ControlInfo>, FileError> {
             u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]);
         pos += 8;
 
-        // Read Shift-JIS NUL-terminated name
-        let name_start = pos;
+        // Each entry has two NUL-terminated Shift-JIS strings:
+        //   1. EventProcPrefix (or Name if no special characters)
+        //   2. RealName (actual name when it contains parentheses, else empty)
+        let epp_start = pos;
         while pos < data.len() && data[pos] != 0x00 {
             pos += 1;
         }
-
-        let name_bytes = &data[name_start..pos];
-        let name = decode_shift_jis(name_bytes);
-
-        // Skip NUL terminator + alignment byte
+        let epp_bytes = &data[epp_start..pos];
         if pos < data.len() {
-            pos += 1; // NUL terminator
+            pos += 1; // skip NUL terminator
         }
-        if pos < data.len() && data[pos] == 0x00 {
-            pos += 1; // alignment NUL
+
+        let real_start = pos;
+        while pos < data.len() && data[pos] != 0x00 {
+            pos += 1;
+        }
+        let real_bytes = &data[real_start..pos];
+        if pos < data.len() {
+            pos += 1; // skip NUL terminator
+        }
+
+        // Use RealName if present, otherwise EventProcPrefix
+        let name = if real_bytes.is_empty() {
+            decode_shift_jis(epp_bytes)
+        } else {
+            decode_shift_jis(real_bytes)
+        };
+
+        // 0x1EFF: internal metadata entries, not real controls
+        if ctrl_type == 0x1EFF {
+            continue;
         }
 
         controls.push(ControlInfo {
