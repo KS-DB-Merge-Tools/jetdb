@@ -344,6 +344,84 @@ End Function
 ...
 ```
 
+### form — Manage forms and reports
+
+#### form list — List form and report names
+
+```
+jetdb form list [OPTIONS] <FILE>
+```
+
+List the names of forms and reports in the database (space-separated by default, sorted alphabetically).
+If the database has no forms or reports, produces no output.
+
+##### Options
+
+- `-1`, `--newline` — Print one name per line
+- `-d`, `--delimiter <STRING>` — Custom delimiter between names (default: space)
+- `--forms-only` — Show only forms
+- `--reports-only` — Show only reports
+
+##### Output examples
+
+```
+$ jetdb form list database.accdb
+F_Menu F_ClientList R_MonthlyReport
+
+$ jetdb form list -1 --forms-only database.accdb
+F_Menu
+F_ClientList
+
+$ jetdb form list --reports-only database.accdb
+R_MonthlyReport
+```
+
+#### form dump — Dump a binary stream
+
+```
+jetdb form dump [OPTIONS] <FILE> <NAME>
+```
+
+Dump the raw binary stream from a form or report to standard output. The default stream is the `blob` (main design definition). Redirect to a file for further analysis.
+
+##### Options
+
+- `-s`, `--stream <STREAM>` — Which stream to dump (default: `blob`)
+  - `blob` — Main design binary (layout, controls, properties, events)
+  - `typeinfo` — Control name and type list
+  - `propdata` — Small property metadata
+  - `blobdelta` — Delta data (usually empty)
+
+##### Output examples
+
+```
+$ jetdb form dump database.accdb F_Menu > form_blob.bin
+$ xxd form_blob.bin | head
+00000000: 1500 1400 0000 0000 9600 1400 ...
+
+$ jetdb form dump -s typeinfo database.accdb F_Menu > typeinfo.bin
+```
+
+#### form controls — List control names from TypeInfo
+
+```
+jetdb form controls <FILE> <NAME>
+```
+
+Parse the TypeInfo stream and list all controls in the form or report. Output is tab-separated: name, type code (hex), index.
+
+##### Output examples
+
+```
+$ jetdb form controls database.accdb F_ClientList
+FormHeader    0x1899    0
+Detail        0x1898    1
+FormFooter    0x189A    2
+Btn_Search    0x0B68    3
+Txt_Name      0x126D    4
+Cmb_Status    0x136F    5
+```
+
 ### export — Export table data as CSV
 
 ```

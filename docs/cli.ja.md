@@ -343,6 +343,84 @@ End Function
 ...
 ```
 
+### form — フォーム/レポートの管理
+
+#### form list — フォーム/レポート名の一覧表示
+
+```
+jetdb form list [OPTIONS] <FILE>
+```
+
+データベース内のフォームとレポートの名前を一覧表示する（デフォルトはスペース区切り、アルファベット順）。
+フォーム/レポートがない場合は何も出力しない。
+
+##### オプション
+
+- `-1`, `--newline` — 1行に1つの名前を出力
+- `-d`, `--delimiter <STRING>` — 名前の間の区切り文字（デフォルト: スペース）
+- `--forms-only` — フォームのみ表示
+- `--reports-only` — レポートのみ表示
+
+##### 出力例
+
+```
+$ jetdb form list database.accdb
+F_メニュー F_クライアント一覧 R_月次レポート
+
+$ jetdb form list -1 --forms-only database.accdb
+F_メニュー
+F_クライアント一覧
+
+$ jetdb form list --reports-only database.accdb
+R_月次レポート
+```
+
+#### form dump — バイナリストリームのダンプ
+
+```
+jetdb form dump [OPTIONS] <FILE> <NAME>
+```
+
+フォーム/レポートの生バイナリストリームを標準出力にダンプする。デフォルトは `blob`（デザイン定義本体）。分析用にファイルにリダイレクトして使用する。
+
+##### オプション
+
+- `-s`, `--stream <STREAM>` — ダンプするストリーム（デフォルト: `blob`）
+  - `blob` — デザイン定義本体（レイアウト、コントロール、プロパティ、イベント）
+  - `typeinfo` — コントロール名と型の一覧
+  - `propdata` — プロパティメタデータ（小）
+  - `blobdelta` — 差分データ（通常は空）
+
+##### 出力例
+
+```
+$ jetdb form dump database.accdb F_メニュー > form_blob.bin
+$ xxd form_blob.bin | head
+00000000: 1500 1400 0000 0000 9600 1400 ...
+
+$ jetdb form dump -s typeinfo database.accdb F_メニュー > typeinfo.bin
+```
+
+#### form controls — TypeInfo からコントロール名一覧を表示
+
+```
+jetdb form controls <FILE> <NAME>
+```
+
+TypeInfo ストリームをパースして、フォーム/レポート内の全コントロールを一覧表示する。出力はタブ区切り: 名前、型コード（16進数）、インデックス。
+
+##### 出力例
+
+```
+$ jetdb form controls database.accdb F_クライアント一覧
+フォームヘッダー    0x1899    0
+詳細                0x1898    1
+フォームフッター    0x189A    2
+Btn_検索            0x0B68    3
+Txt_名前            0x126D    4
+Cmb_ステータス      0x136F    5
+```
+
 ### export — テーブルデータの CSV エクスポート
 
 ```

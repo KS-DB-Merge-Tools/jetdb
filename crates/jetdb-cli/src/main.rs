@@ -1,5 +1,6 @@
 mod ddl;
 mod export;
+mod form;
 mod prop;
 mod query;
 mod vba;
@@ -52,6 +53,8 @@ enum Commands {
     Prop(prop::PropArgs),
     /// Manage VBA modules (list / show)
     Vba(vba::VbaArgs),
+    /// Manage forms and reports (list / dump / controls)
+    Form(form::FormArgs),
 }
 
 #[derive(Args)]
@@ -525,6 +528,7 @@ fn main() -> ExitCode {
         Commands::Queries(args) => query::cmd_queries(args, password.as_deref()),
         Commands::Prop(args) => prop::cmd_prop(args, password.as_deref()),
         Commands::Vba(args) => vba::cmd_vba(args, password.as_deref()),
+        Commands::Form(args) => form::cmd_form(args, password.as_deref()),
     }
 }
 

@@ -49,8 +49,14 @@ pub enum FileError {
     ModuleNotFound {
         name: String,
     },
+    FormNotFound {
+        name: String,
+    },
     InvalidVbaProject {
         reason: String,
+    },
+    InvalidFormData {
+        reason: &'static str,
     },
     PasswordRequired,
     InvalidPassword,
@@ -88,7 +94,9 @@ impl fmt::Display for FileError {
             Self::TableNotFound { name } => write!(f, "table not found: {name}"),
             Self::QueryNotFound { name } => write!(f, "query not found: {name}"),
             Self::ModuleNotFound { name } => write!(f, "VBA module not found: {name}"),
+            Self::FormNotFound { name } => write!(f, "form/report not found: {name}"),
             Self::InvalidVbaProject { reason } => write!(f, "invalid VBA project: {reason}"),
+            Self::InvalidFormData { reason } => write!(f, "invalid form data: {reason}"),
             Self::PasswordRequired => write!(f, "this database is password-protected"),
             Self::InvalidPassword => write!(f, "invalid password"),
             Self::UnsupportedEncryption { reason } => {

@@ -6,6 +6,7 @@ use std::io::{Cursor, Read as _, Write};
 use crate::catalog;
 use crate::data::{self, Value};
 use crate::file::{FileError, PageReader};
+use crate::storage::{self, StorageEntry};
 use crate::table;
 
 // ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ pub struct VbaProject {
 /// `MSysAccessObjects` (Jet3/Access 97) for older databases.
 pub fn read_vba_project(reader: &mut PageReader) -> Result<VbaProject, FileError> {
     // Try MSysAccessStorage first (Jet4/ACE format)
-    let entries = read_storage_entries(reader)?;
+    let entries = storage::read_storage_entries(reader)?;
     if !entries.is_empty() {
         let project = build_cfb_and_extract(&entries)?;
         if !project.modules.is_empty() {
@@ -98,95 +99,8 @@ fn extract_modules_from_cfb(cfb_bytes: Vec<u8>) -> Result<VbaProject, FileError>
 }
 
 // ---------------------------------------------------------------------------
-// Internal: MSysAccessStorage reading
+// Internal: MSysAccessStorage reading is now in crate::storage
 // ---------------------------------------------------------------------------
-
-/// A single entry from the MSysAccessStorage table.
-struct StorageEntry {
-    id: i32,
-    parent_id: i32,
-    name: String,
-    entry_type: i32,
-    data: Vec<u8>,
-}
-
-/// Read all entries from the MSysAccessStorage system table.
-fn read_storage_entries(reader: &mut PageReader) -> Result<Vec<StorageEntry>, FileError> {
-    // Find MSysAccessStorage in the catalog
-    let catalog = catalog::read_catalog(reader)?;
-    let entry = match catalog.iter().find(|e| e.name == "MSysAccessStorage") {
-        Some(e) => e,
-        None => return Ok(Vec::new()),
-    };
-
-    let tdef = table::read_table_def(reader, &entry.name, entry.table_page)?;
-    let result = data::read_table_rows(reader, &tdef)?;
-    result.warn_skipped("MSysAccessStorage");
-
-    // Locate column indices
-    let (mut id_idx, mut parent_id_idx, mut name_idx, mut type_idx, mut lv_idx) =
-        (None, None, None, None, None);
-    for (i, col) in tdef.columns.iter().enumerate() {
-        match col.name.as_str() {
-            "Id" => id_idx = Some(i),
-            "ParentId" => parent_id_idx = Some(i),
-            "Name" => name_idx = Some(i),
-            "Type" => type_idx = Some(i),
-            "Lv" => lv_idx = Some(i),
-            _ => {}
-        }
-    }
-
-    let id_idx = id_idx.ok_or(FileError::InvalidTableDef {
-        reason: "MSysAccessStorage missing Id column",
-    })?;
-    let parent_id_idx = parent_id_idx.ok_or(FileError::InvalidTableDef {
-        reason: "MSysAccessStorage missing ParentId column",
-    })?;
-    let name_idx = name_idx.ok_or(FileError::InvalidTableDef {
-        reason: "MSysAccessStorage missing Name column",
-    })?;
-    let type_idx = type_idx.ok_or(FileError::InvalidTableDef {
-        reason: "MSysAccessStorage missing Type column",
-    })?;
-    let lv_idx = lv_idx.ok_or(FileError::InvalidTableDef {
-        reason: "MSysAccessStorage missing Lv column",
-    })?;
-
-    let mut entries = Vec::new();
-    for row in &result.rows {
-        let id = match row.get(id_idx) {
-            Some(Value::Long(v)) => *v,
-            _ => continue,
-        };
-        let parent_id = match row.get(parent_id_idx) {
-            Some(Value::Long(v)) => *v,
-            _ => continue,
-        };
-        let name = match row.get(name_idx) {
-            Some(Value::Text(s)) => s.clone(),
-            _ => continue,
-        };
-        let entry_type = match row.get(type_idx) {
-            Some(Value::Long(v)) => *v,
-            _ => continue,
-        };
-        let data = match row.get(lv_idx) {
-            Some(Value::Binary(b)) => b.clone(),
-            _ => Vec::new(),
-        };
-
-        entries.push(StorageEntry {
-            id,
-            parent_id,
-            name,
-            entry_type,
-            data,
-        });
-    }
-
-    Ok(entries)
-}
 
 // ---------------------------------------------------------------------------
 // Internal: MSysAccessObjects reading (Jet3 / Access 97)
@@ -365,27 +279,12 @@ fn find_vba_project_entries(entries: &[StorageEntry]) -> Option<(i32, Vec<&Stora
     // Find the "VBAProject" storage entry
     let vba_project = entries
         .iter()
-        .find(|e| e.name == "VBAProject" && is_storage(e))?;
+        .find(|e| e.name == "VBAProject" && storage::is_storage(e))?;
 
     let mut children = Vec::new();
     let mut visited = HashSet::new();
-    collect_children(entries, vba_project.id, &mut children, &mut visited);
+    storage::collect_children(entries, vba_project.id, &mut children, &mut visited);
     Some((vba_project.id, children))
-}
-
-/// Recursively collect children of a given parent ID.
-fn collect_children<'a>(
-    entries: &'a [StorageEntry],
-    parent_id: i32,
-    result: &mut Vec<&'a StorageEntry>,
-    visited: &mut HashSet<i32>,
-) {
-    for entry in entries {
-        if entry.parent_id == parent_id && visited.insert(entry.id) {
-            result.push(entry);
-            collect_children(entries, entry.id, result, visited);
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -417,11 +316,11 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
     })?;
 
     // Create storages first, then streams (ensures parent dirs exist)
-    let storages: Vec<_> = vba_entries.iter().filter(|e| is_storage(e)).collect();
-    let streams: Vec<_> = vba_entries.iter().filter(|e| !is_storage(e)).collect();
+    let storages: Vec<_> = vba_entries.iter().filter(|e| storage::is_storage(e)).collect();
+    let streams: Vec<_> = vba_entries.iter().filter(|e| !storage::is_storage(e)).collect();
 
     for entry in &storages {
-        let path = match build_entry_path(entry, vba_project_id, &id_map) {
+        let path = match storage::build_entry_path(entry, vba_project_id, &id_map) {
             Some(p) => p,
             None => continue,
         };
@@ -432,7 +331,7 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
     }
 
     for entry in &streams {
-        let path = match build_entry_path(entry, vba_project_id, &id_map) {
+        let path = match storage::build_entry_path(entry, vba_project_id, &id_map) {
             Some(p) => p,
             None => continue,
         };
@@ -454,58 +353,6 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
 
     let bytes = cf.into_inner().into_inner();
     extract_modules_from_cfb(bytes)
-}
-
-/// Check if a storage entry is a storage (directory) vs stream (file).
-///
-/// Type values: 1 = storage, 2 = stream (observed in Access databases).
-fn is_storage(entry: &StorageEntry) -> bool {
-    entry.entry_type == 1
-}
-
-/// Build the CFB path for a storage entry relative to the VBAProject root.
-///
-/// `vba_project_id` is the ID of the VBAProject storage entry, which
-/// corresponds to the root of the CFB compound file.
-///
-/// Returns `None` if the parent chain is broken (circular reference or
-/// missing parent), logging a warning so the caller can skip the entry.
-fn build_entry_path(
-    entry: &StorageEntry,
-    vba_project_id: i32,
-    id_map: &HashMap<i32, &StorageEntry>,
-) -> Option<String> {
-    let mut parts = vec![entry.name.clone()];
-    let mut current_parent = entry.parent_id;
-    let mut visited = HashSet::new();
-
-    // Walk up the tree, stopping at VBAProject (which is the CFB root)
-    while current_parent != vba_project_id {
-        if !visited.insert(current_parent) {
-            log::warn!(
-                "skipping entry '{}': circular reference in parent chain",
-                entry.name
-            );
-            return None;
-        }
-        match id_map.get(&current_parent) {
-            Some(parent) => {
-                parts.push(parent.name.clone());
-                current_parent = parent.parent_id;
-            }
-            None => {
-                log::warn!(
-                    "skipping entry '{}': missing parent id {}",
-                    entry.name,
-                    current_parent
-                );
-                return None;
-            }
-        }
-    }
-
-    parts.reverse();
-    Some(format!("/{}", parts.join("/")))
 }
 
 // ---------------------------------------------------------------------------
@@ -596,7 +443,7 @@ mod tests {
     fn storage_entries_v2003() {
         let path = skip_if_missing!("vbaV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();
-        let entries = read_storage_entries(&mut reader).unwrap();
+        let entries = storage::read_storage_entries(&mut reader).unwrap();
         assert!(!entries.is_empty());
     }
 
@@ -636,7 +483,7 @@ mod tests {
         let dir = make_entry(3, 2, "dir");
         let id_map: HashMap<i32, &StorageEntry> = [(2, &vba)].into_iter().collect();
         assert_eq!(
-            build_entry_path(&dir, 1, &id_map),
+            storage::build_entry_path(&dir, 1, &id_map),
             Some("/VBA/dir".to_string())
         );
     }
@@ -647,7 +494,7 @@ mod tests {
         let a = make_entry(2, 3, "A");
         let b = make_entry(3, 2, "B");
         let id_map: HashMap<i32, &StorageEntry> = [(2, &a), (3, &b)].into_iter().collect();
-        assert_eq!(build_entry_path(&a, 1, &id_map), None);
+        assert_eq!(storage::build_entry_path(&a, 1, &id_map), None);
     }
 
     #[test]
@@ -655,6 +502,6 @@ mod tests {
         // Entry with parent_id=99 which doesn't exist in the map
         let entry = make_entry(2, 99, "orphan");
         let id_map: HashMap<i32, &StorageEntry> = HashMap::new();
-        assert_eq!(build_entry_path(&entry, 1, &id_map), None);
+        assert_eq!(storage::build_entry_path(&entry, 1, &id_map), None);
     }
 }

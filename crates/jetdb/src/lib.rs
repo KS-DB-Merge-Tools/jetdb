@@ -6,12 +6,14 @@ pub mod data;
 pub mod ddl;
 pub mod encoding;
 pub mod file;
+pub mod form;
 pub mod format;
 pub mod map;
 pub mod money;
 pub mod prop;
 pub mod query;
 pub mod relationship;
+pub(crate) mod storage;
 pub mod table;
 pub mod timestamp;
 pub mod vba;
@@ -32,3 +34,7 @@ pub use data::{read_table_rows, ReadResult, Value};
 pub use prop::{read_object_properties, ObjectProperties, PropMapType, Property, PropertyMap};
 pub use query::{query_to_sql, read_queries, QueryDef, QueryType};
 pub use vba::{read_vba_project, VbaModule, VbaModuleType, VbaProject};
+pub use form::{
+    list_forms, read_form_stream, read_form_type_info, ControlInfo, FormEntry, FormObjectType,
+    FormStream, FormTypeInfo, StreamKind,
+};

@@ -327,6 +327,7 @@ dependencies = [
  "cbc",
  "cfb 0.14.0",
  "ecb",
+ "encoding_rs",
  "log",
  "ovba",
  "quick-xml",
