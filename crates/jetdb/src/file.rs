@@ -385,7 +385,11 @@ impl PageReader {
                     0,
                 )?;
             }
-            EncryptionState::Rc4CryptoApi { base_hash, key_size, encoding_key } => {
+            EncryptionState::Rc4CryptoApi {
+                base_hash,
+                key_size,
+                encoding_key,
+            } => {
                 crypto::decrypt_page_rc4_cryptoapi(
                     &mut reader.page0_buf,
                     base_hash,
@@ -394,7 +398,11 @@ impl PageReader {
                     0,
                 );
             }
-            EncryptionState::StandardAes { iter_hash, key_size, encoding_key } => {
+            EncryptionState::StandardAes {
+                iter_hash,
+                key_size,
+                encoding_key,
+            } => {
                 crypto::decrypt_page_standard_aes(
                     &mut reader.page0_buf,
                     iter_hash,
@@ -535,7 +543,11 @@ impl PageReader {
                     page,
                 )?;
             }
-            Some(EncryptionState::Rc4CryptoApi { base_hash, key_size, encoding_key }) => {
+            Some(EncryptionState::Rc4CryptoApi {
+                base_hash,
+                key_size,
+                encoding_key,
+            }) => {
                 crypto::decrypt_page_rc4_cryptoapi(
                     &mut self.page_buf,
                     base_hash,
@@ -544,7 +556,11 @@ impl PageReader {
                     page,
                 );
             }
-            Some(EncryptionState::StandardAes { iter_hash, key_size, encoding_key }) => {
+            Some(EncryptionState::StandardAes {
+                iter_hash,
+                key_size,
+                encoding_key,
+            }) => {
                 crypto::decrypt_page_standard_aes(
                     &mut self.page_buf,
                     iter_hash,
@@ -998,9 +1014,7 @@ mod tests {
         let e = FileError::InvalidPassword;
         assert!(e.source().is_none());
 
-        let e = FileError::UnsupportedEncryption {
-            reason: "r".into(),
-        };
+        let e = FileError::UnsupportedEncryption { reason: "r".into() };
         assert!(e.source().is_none());
 
         let io_err = std::io::Error::other("io");
@@ -1112,9 +1126,7 @@ mod tests {
         // Read a user table to verify data decryption works
         let user_tables: Vec<_> = catalog
             .iter()
-            .filter(|e| {
-                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
-            })
+            .filter(|e| e.object_type == ObjectType::Table && !e.name.starts_with("MSys"))
             .collect();
         assert!(!user_tables.is_empty(), "should have user tables");
 
@@ -1214,8 +1226,8 @@ mod tests {
     fn open_with_password_enc_v2000_mdb() {
         let path = skip_if_missing!("enc_vbaV2000.mdb");
         // RC4 encrypted .mdb: open_with_password should work (password ignored for .mdb)
-        let reader = PageReader::open_with_password(&path, None)
-            .expect("should open RC4 encrypted .mdb");
+        let reader =
+            PageReader::open_with_password(&path, None).expect("should open RC4 encrypted .mdb");
         assert!(reader.encryption.is_none());
         assert!(reader.page_count() > 0);
     }
@@ -1223,8 +1235,8 @@ mod tests {
     #[test]
     fn open_with_password_enc_v2003_mdb() {
         let path = skip_if_missing!("enc_vbaV2003.mdb");
-        let reader = PageReader::open_with_password(&path, None)
-            .expect("should open RC4 encrypted .mdb");
+        let reader =
+            PageReader::open_with_password(&path, None).expect("should open RC4 encrypted .mdb");
         assert!(reader.encryption.is_none());
         assert!(reader.page_count() > 0);
     }
@@ -1242,9 +1254,7 @@ mod tests {
         // Read a user table (filter by ObjectType::Table)
         let user_tables: Vec<_> = catalog
             .iter()
-            .filter(|e| {
-                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
-            })
+            .filter(|e| e.object_type == ObjectType::Table && !e.name.starts_with("MSys"))
             .collect();
         assert!(!user_tables.is_empty(), "should have user tables");
 
@@ -1267,9 +1277,7 @@ mod tests {
 
         let user_tables: Vec<_> = catalog
             .iter()
-            .filter(|e| {
-                e.object_type == ObjectType::Table && !e.name.starts_with("MSys")
-            })
+            .filter(|e| e.object_type == ObjectType::Table && !e.name.starts_with("MSys"))
             .collect();
         assert!(!user_tables.is_empty(), "should have user tables");
 
@@ -1290,9 +1298,7 @@ mod tests {
         assert!(!catalog.is_empty(), "catalog should not be empty");
 
         // Verify system tables with overflow data can be read
-        let msys_storage = catalog
-            .iter()
-            .find(|e| e.name == "MSysAccessStorage");
+        let msys_storage = catalog.iter().find(|e| e.name == "MSysAccessStorage");
         assert!(
             msys_storage.is_some(),
             "MSysAccessStorage should exist in overflow test file"

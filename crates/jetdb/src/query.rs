@@ -2085,7 +2085,11 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let queries = read_queries(&mut reader).unwrap();
         // 3 queries in catalog, but ~sq_fF_Table1 is an embedded query (skipped)
-        assert_eq!(queries.len(), 2, "formPropTest.accdb should have 2 user queries");
+        assert_eq!(
+            queries.len(),
+            2,
+            "formPropTest.accdb should have 2 user queries"
+        );
         for q in &queries {
             assert!(
                 !q.name.starts_with("~sq_"),

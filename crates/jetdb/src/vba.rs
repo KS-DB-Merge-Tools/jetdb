@@ -316,8 +316,14 @@ fn build_cfb_and_extract(entries: &[StorageEntry]) -> Result<VbaProject, FileErr
     })?;
 
     // Create storages first, then streams (ensures parent dirs exist)
-    let storages: Vec<_> = vba_entries.iter().filter(|e| storage::is_storage(e)).collect();
-    let streams: Vec<_> = vba_entries.iter().filter(|e| !storage::is_storage(e)).collect();
+    let storages: Vec<_> = vba_entries
+        .iter()
+        .filter(|e| storage::is_storage(e))
+        .collect();
+    let streams: Vec<_> = vba_entries
+        .iter()
+        .filter(|e| !storage::is_storage(e))
+        .collect();
 
     for entry in &storages {
         let path = match storage::build_entry_path(entry, vba_project_id, &id_map) {

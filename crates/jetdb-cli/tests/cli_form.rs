@@ -142,7 +142,11 @@ fn form_controls_success() {
     // Each line should be tab-separated 3 columns: name\ttype\tindex
     for line in trimmed.lines() {
         let cols: Vec<&str> = line.split('\t').collect();
-        assert_eq!(cols.len(), 3, "expected 3 tab-separated columns, got: {line}");
+        assert_eq!(
+            cols.len(),
+            3,
+            "expected 3 tab-separated columns, got: {line}"
+        );
     }
 }
 
@@ -164,7 +168,10 @@ fn form_props_success() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Form: F_Table1"), "should have form header");
-    assert!(stdout.contains("Form Properties:"), "should have properties section");
+    assert!(
+        stdout.contains("Form Properties:"),
+        "should have properties section"
+    );
     assert!(stdout.contains("Control:"), "should have control section");
 }
 
@@ -270,7 +277,14 @@ fn form_list_delimiter() {
 fn form_dump_typeinfo() {
     let path = skip_if_missing!("formPropTest.accdb");
     let output = jetdb_bin()
-        .args(["form", "dump", "-s", "typeinfo", path.to_str().unwrap(), "F_Table1"])
+        .args([
+            "form",
+            "dump",
+            "-s",
+            "typeinfo",
+            path.to_str().unwrap(),
+            "F_Table1",
+        ])
         .output()
         .expect("failed to run jetdb");
     assert!(
@@ -295,7 +309,14 @@ fn form_dump_typeinfo() {
 fn form_dump_propdata() {
     let path = skip_if_missing!("formPropTest.accdb");
     let output = jetdb_bin()
-        .args(["form", "dump", "-s", "propdata", path.to_str().unwrap(), "F_Table1"])
+        .args([
+            "form",
+            "dump",
+            "-s",
+            "propdata",
+            path.to_str().unwrap(),
+            "F_Table1",
+        ])
         .output()
         .expect("failed to run jetdb");
     assert!(
@@ -303,8 +324,5 @@ fn form_dump_propdata() {
         "should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        !output.stdout.is_empty(),
-        "PropData should not be empty"
-    );
+    assert!(!output.stdout.is_empty(), "PropData should not be empty");
 }

@@ -118,7 +118,9 @@ pub fn read_table_rows(reader: &mut PageReader, table: &TableDef) -> Result<Read
                 Ok(v) => v,
                 Err(e) => {
                     if is_lookup {
-                        log::debug!("skipping stale lookup row on page {page_num} row {row_idx}: {e}");
+                        log::debug!(
+                            "skipping stale lookup row on page {page_num} row {row_idx}: {e}"
+                        );
                     } else {
                         log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
                         skipped_rows += 1;
@@ -573,19 +575,27 @@ fn read_variable_value(
             Value::Int(i16::from_le_bytes([var_data[0], var_data[1]]))
         }
         ColumnType::Long if var_data.len() >= 4 => {
-            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..4].try_into() else {
+                return Value::Null;
+            };
             Value::Long(i32::from_le_bytes(bytes))
         }
         ColumnType::BigInt if var_data.len() >= 8 => {
-            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::BigInt(i64::from_le_bytes(bytes))
         }
         ColumnType::Float if var_data.len() >= 4 => {
-            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..4].try_into() else {
+                return Value::Null;
+            };
             Value::Float(f32::from_le_bytes(bytes))
         }
         ColumnType::Double if var_data.len() >= 8 => {
-            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::Double(f64::from_le_bytes(bytes))
         }
         ColumnType::Money if var_data.len() >= 8 => {
@@ -601,12 +611,16 @@ fn read_variable_value(
             Value::Numeric(money::numeric_to_string(&bytes, col.scale))
         }
         ColumnType::Timestamp if var_data.len() >= 8 => {
-            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::Timestamp(f64::from_le_bytes(bytes))
         }
         ColumnType::Guid if var_data.len() >= 16 => Value::Guid(format_guid(&var_data[..16])),
         ColumnType::ComplexType if var_data.len() >= 4 => {
-            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..4].try_into() else {
+                return Value::Null;
+            };
             Value::Long(i32::from_le_bytes(bytes))
         }
         ColumnType::DateTimeExtended if var_data.len() >= 42 => {
@@ -1337,7 +1351,9 @@ mod tests {
             "should contain date-only value 2020-06-17, found: {ext_values:?}"
         );
         assert!(
-            ext_values.iter().any(|v| v.contains("2021-06-14 22:45:12.3456789")),
+            ext_values
+                .iter()
+                .any(|v| v.contains("2021-06-14 22:45:12.3456789")),
             "should contain full precision datetime, found: {ext_values:?}"
         );
     }

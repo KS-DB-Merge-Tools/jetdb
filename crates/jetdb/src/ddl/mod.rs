@@ -1469,8 +1469,24 @@ mod tests {
         let tdef = table(
             "jp_テーブル2",
             vec![
-                col_with_num("ID", ColumnType::Long, 0, column_flags::FIXED | column_flags::AUTO_LONG, 0, 0, 1),
-                col_with_num("商品名", ColumnType::Text, 255, column_flags::NULLABLE, 0, 0, 2),
+                col_with_num(
+                    "ID",
+                    ColumnType::Long,
+                    0,
+                    column_flags::FIXED | column_flags::AUTO_LONG,
+                    0,
+                    0,
+                    1,
+                ),
+                col_with_num(
+                    "商品名",
+                    ColumnType::Text,
+                    255,
+                    column_flags::NULLABLE,
+                    0,
+                    0,
+                    2,
+                ),
                 col_with_num("単価", ColumnType::Long, 0, column_flags::NULLABLE, 0, 0, 3),
                 col_with_num("個数", ColumnType::Long, 0, column_flags::NULLABLE, 0, 0, 4),
             ],

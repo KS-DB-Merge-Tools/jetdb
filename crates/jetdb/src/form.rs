@@ -187,10 +187,7 @@ pub fn read_form_stream(
 }
 
 /// Read and parse TypeInfo for a named form or report.
-pub fn read_form_type_info(
-    reader: &mut PageReader,
-    name: &str,
-) -> Result<FormTypeInfo, FileError> {
+pub fn read_form_type_info(reader: &mut PageReader, name: &str) -> Result<FormTypeInfo, FileError> {
     let entries = storage::read_storage_entries(reader)?;
     let (object_type, stream_data) = find_stream(&entries, name, StreamKind::TypeInfo)?;
     let controls = parse_type_info(&stream_data)?;
@@ -387,14 +384,10 @@ fn find_stream(
         {
             if let Some(dir_data) = find_dir_data(entries, folder.id) {
                 let mapping = parse_dir_data(&dir_data.data)?;
-                if let Some((_form_name, storage_num)) =
-                    mapping.iter().find(|(n, _)| n == name)
-                {
+                if let Some((_form_name, storage_num)) = mapping.iter().find(|(n, _)| n == name) {
                     // Find the storage entry with this number under the folder
                     if let Some(form_storage) = entries.iter().find(|e| {
-                        e.parent_id == folder.id
-                            && e.name == *storage_num
-                            && storage::is_storage(e)
+                        e.parent_id == folder.id && e.name == *storage_num && storage::is_storage(e)
                     }) {
                         // Find the requested stream under this form storage
                         let stream_name = stream_kind.storage_name();
@@ -476,9 +469,8 @@ fn parse_dir_data(data: &[u8]) -> Result<Vec<(String, String)>, FileError> {
 
         // Try declared_len first: check if payload ends with 0x0000
         let payload_end = pos + declared_len;
-        let ends_with_null = payload_end >= 2
-            && data[payload_end - 2] == 0x00
-            && data[payload_end - 1] == 0x00;
+        let ends_with_null =
+            payload_end >= 2 && data[payload_end - 2] == 0x00 && data[payload_end - 1] == 0x00;
 
         let actual_end = if ends_with_null {
             payload_end
@@ -506,8 +498,7 @@ fn parse_dir_data(data: &[u8]) -> Result<Vec<(String, String)>, FileError> {
         }
 
         let name_bytes = &data[pos..actual_end - 4];
-        let storage_index =
-            u16::from_le_bytes([data[actual_end - 4], data[actual_end - 3]]);
+        let storage_index = u16::from_le_bytes([data[actual_end - 4], data[actual_end - 3]]);
 
         if name_bytes.is_empty() {
             pos = actual_end;
@@ -564,7 +555,8 @@ fn parse_type_info(data: &[u8]) -> Result<Vec<ControlInfo>, FileError> {
 
         let ctrl_type = u16::from_le_bytes([data[pos], data[pos + 1]]);
         // skip padding u16 at pos+2..pos+4
-        let index = u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]);
+        let index =
+            u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]);
         pos += 8;
 
         // Read Shift-JIS NUL-terminated name
@@ -626,9 +618,15 @@ fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>)
 
     while pos + 14 <= data.len() {
         let prop_id = u16::from_le_bytes([data[pos], data[pos + 1]]);
-        let type_code = u32::from_le_bytes([data[pos + 2], data[pos + 3], data[pos + 4], data[pos + 5]]);
+        let type_code =
+            u32::from_le_bytes([data[pos + 2], data[pos + 3], data[pos + 4], data[pos + 5]]);
         let _b = u32::from_le_bytes([data[pos + 6], data[pos + 7], data[pos + 8], data[pos + 9]]);
-        let c = u32::from_le_bytes([data[pos + 10], data[pos + 11], data[pos + 12], data[pos + 13]]);
+        let c = u32::from_le_bytes([
+            data[pos + 10],
+            data[pos + 11],
+            data[pos + 12],
+            data[pos + 13],
+        ]);
         let data_start = pos + 14;
 
         match type_code {
@@ -638,8 +636,10 @@ fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>)
                     break;
                 }
                 let val = u32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
                 all_props.push(BlobProperty {
                     prop_id,
@@ -665,8 +665,10 @@ fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>)
                     break;
                 }
                 let val = i32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
                 all_props.push(BlobProperty {
                     prop_id,
@@ -680,8 +682,10 @@ fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>)
                     break;
                 }
                 let val = u32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
                 all_props.push(BlobProperty {
                     prop_id,
@@ -695,10 +699,14 @@ fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>)
                     break;
                 }
                 let val = f64::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
-                    data[data_start + 4], data[data_start + 5],
-                    data[data_start + 6], data[data_start + 7],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
+                    data[data_start + 4],
+                    data[data_start + 5],
+                    data[data_start + 6],
+                    data[data_start + 7],
                 ]);
                 all_props.push(BlobProperty {
                     prop_id,
@@ -725,9 +733,8 @@ fn parse_blob(data: &[u8]) -> Result<(Vec<BlobProperty>, Vec<Vec<BlobProperty>>)
                     break;
                 }
                 let text_bytes = &data[data_start..data_start + byte_len];
-                let text = encoding::decode_utf16le(text_bytes).unwrap_or_else(|_| {
-                    String::from_utf8_lossy(text_bytes).into_owned()
-                });
+                let text = encoding::decode_utf16le(text_bytes)
+                    .unwrap_or_else(|_| String::from_utf8_lossy(text_bytes).into_owned());
                 all_props.push(BlobProperty {
                     prop_id,
                     value: BlobValue::Text(text),
@@ -804,87 +811,149 @@ fn parse_section_props(data: &[u8], start: usize, end: usize) -> Vec<BlobPropert
 
     while pos + 14 <= end {
         let prop_id = u16::from_le_bytes([data[pos], data[pos + 1]]);
-        let type_code = u32::from_le_bytes([data[pos + 2], data[pos + 3], data[pos + 4], data[pos + 5]]);
+        let type_code =
+            u32::from_le_bytes([data[pos + 2], data[pos + 3], data[pos + 4], data[pos + 5]]);
         let _b = u32::from_le_bytes([data[pos + 6], data[pos + 7], data[pos + 8], data[pos + 9]]);
-        let c = u32::from_le_bytes([data[pos + 10], data[pos + 11], data[pos + 12], data[pos + 13]]);
+        let c = u32::from_le_bytes([
+            data[pos + 10],
+            data[pos + 11],
+            data[pos + 12],
+            data[pos + 13],
+        ]);
         let data_start = pos + 14;
 
         match type_code {
             0x01 => {
-                if data_start + 4 > end { break; }
+                if data_start + 4 > end {
+                    break;
+                }
                 let val = u32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Bool(val != 0) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Bool(val != 0),
+                });
                 pos += 18;
             }
             0x02 => {
-                if data_start + 5 > end { break; }
+                if data_start + 5 > end {
+                    break;
+                }
                 let val = i16::from_le_bytes([data[data_start], data[data_start + 1]]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Short(val) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Short(val),
+                });
                 pos += 19;
             }
             0x03 => {
-                if data_start + 6 > end { break; }
+                if data_start + 6 > end {
+                    break;
+                }
                 let val = i32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Long(val) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Long(val),
+                });
                 pos += 20;
             }
             0x04 => {
-                if data_start + 8 > end { break; }
+                if data_start + 8 > end {
+                    break;
+                }
                 let val = u32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Color(val) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Color(val),
+                });
                 pos += 22;
             }
             0x06 => {
                 // Type 6: observed in control sections. 6 bytes data, no trailer. Total = 20.
-                if data_start + 6 > end { break; }
+                if data_start + 6 > end {
+                    break;
+                }
                 let val = i32::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
                 ]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Long(val) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Long(val),
+                });
                 pos += 20;
             }
             0x08 => {
-                if data_start + 12 > end { break; }
+                if data_start + 12 > end {
+                    break;
+                }
                 let val = f64::from_le_bytes([
-                    data[data_start], data[data_start + 1],
-                    data[data_start + 2], data[data_start + 3],
-                    data[data_start + 4], data[data_start + 5],
-                    data[data_start + 6], data[data_start + 7],
+                    data[data_start],
+                    data[data_start + 1],
+                    data[data_start + 2],
+                    data[data_start + 3],
+                    data[data_start + 4],
+                    data[data_start + 5],
+                    data[data_start + 6],
+                    data[data_start + 7],
                 ]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Double(val) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Double(val),
+                });
                 pos += 26;
             }
             0x09 => {
-                if data_start + 20 > end { break; }
+                if data_start + 20 > end {
+                    break;
+                }
                 let guid = format_guid(&data[data_start..data_start + 16]);
-                props.push(BlobProperty { prop_id, value: BlobValue::Guid(guid) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Guid(guid),
+                });
                 pos += 34;
             }
             0x0A | 0x0C => {
                 let byte_len = c as usize;
-                if data_start + byte_len + 4 > end { break; }
+                if data_start + byte_len + 4 > end {
+                    break;
+                }
                 let text_bytes = &data[data_start..data_start + byte_len];
-                let text = encoding::decode_utf16le(text_bytes).unwrap_or_else(|_| {
-                    String::from_utf8_lossy(text_bytes).into_owned()
+                let text = encoding::decode_utf16le(text_bytes)
+                    .unwrap_or_else(|_| String::from_utf8_lossy(text_bytes).into_owned());
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Text(text),
                 });
-                props.push(BlobProperty { prop_id, value: BlobValue::Text(text) });
                 pos += 14 + byte_len + 4;
             }
             0x0B => {
                 let byte_len = c as usize;
-                if data_start + byte_len + 4 > end { break; }
+                if data_start + byte_len + 4 > end {
+                    break;
+                }
                 let bin_data = data[data_start..data_start + byte_len].to_vec();
-                props.push(BlobProperty { prop_id, value: BlobValue::Binary(bin_data) });
+                props.push(BlobProperty {
+                    prop_id,
+                    value: BlobValue::Binary(bin_data),
+                });
                 pos += 14 + byte_len + 4;
             }
             _ => {
@@ -906,8 +975,17 @@ fn format_guid(bytes: &[u8]) -> String {
     let d3 = u16::from_le_bytes([bytes[6], bytes[7]]);
     format!(
         "{{{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}}}",
-        d1, d2, d3, bytes[8], bytes[9], bytes[10], bytes[11],
-        bytes[12], bytes[13], bytes[14], bytes[15]
+        d1,
+        d2,
+        d3,
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15]
     )
 }
 
@@ -965,7 +1043,7 @@ mod tests {
         let mut data = vec![0x00, 0x00, 0x00, 0x00]; // header
         data.push(0x04); // marker
         data.push(0x08); // len = 4 (name) + 2 (index) + 2 (null)
-        // name "AB" in UTF-16LE
+                         // name "AB" in UTF-16LE
         data.extend_from_slice(&[0x41, 0x00, 0x42, 0x00]);
         // storage_index = 5
         data.extend_from_slice(&[0x05, 0x00]);
@@ -1195,9 +1273,21 @@ mod tests {
         // Bool entry
         entries.extend_from_slice(&make_entry(0x0013, 0x01, 0, 0, &[0x00; 4]));
         // Short entry
-        entries.extend_from_slice(&make_entry(0x0098, 0x02, 0, 0, &[0x07, 0x00, 0x00, 0x00, 0x00]));
+        entries.extend_from_slice(&make_entry(
+            0x0098,
+            0x02,
+            0,
+            0,
+            &[0x07, 0x00, 0x00, 0x00, 0x00],
+        ));
         // Long entry
-        entries.extend_from_slice(&make_entry(0x002A, 0x03, 0, 0, &[0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00]));
+        entries.extend_from_slice(&make_entry(
+            0x002A,
+            0x03,
+            0,
+            0,
+            &[0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00],
+        ));
 
         let blob = make_blob(&entries);
         let (props, _) = parse_blob(&blob).unwrap();
@@ -1224,8 +1314,8 @@ mod tests {
     fn parse_blob_guid_entry() {
         // GUID (type 0x09): 16 bytes data + 4 byte trailer, total = 34
         let guid_bytes = [
-            0x50, 0xA6, 0x64, 0x8D, 0xE7, 0x62, 0x03, 0x49,
-            0x97, 0x33, 0x0D, 0x8C, 0xE8, 0x49, 0x78, 0xBF,
+            0x50, 0xA6, 0x64, 0x8D, 0xE7, 0x62, 0x03, 0x49, 0x97, 0x33, 0x0D, 0x8C, 0xE8, 0x49,
+            0x78, 0xBF,
         ];
         let mut payload = Vec::new();
         payload.extend_from_slice(&guid_bytes);
@@ -1255,10 +1345,16 @@ mod tests {
 
     #[test]
     fn blob_property_display_name() {
-        let known = BlobProperty { prop_id: 0x009C, value: BlobValue::Bool(true) };
+        let known = BlobProperty {
+            prop_id: 0x009C,
+            value: BlobValue::Bool(true),
+        };
         assert_eq!(known.display_name(), "RecordSource");
 
-        let unknown = BlobProperty { prop_id: 0x1234, value: BlobValue::Bool(true) };
+        let unknown = BlobProperty {
+            prop_id: 0x1234,
+            value: BlobValue::Bool(true),
+        };
         assert_eq!(unknown.display_name(), "0x1234");
     }
 
@@ -1310,7 +1406,10 @@ mod tests {
         let forms = list_forms(&mut reader).unwrap();
         let mut names: Vec<&str> = forms.iter().map(|e| e.name.as_str()).collect();
         names.sort();
-        assert_eq!(names, ["F_Buttons", "F_Table0", "F_Table1", "jp_フォーム_2"]);
+        assert_eq!(
+            names,
+            ["F_Buttons", "F_Table0", "F_Table1", "jp_フォーム_2"]
+        );
         assert!(forms.iter().all(|e| e.object_type == FormObjectType::Form));
     }
 
@@ -1321,10 +1420,14 @@ mod tests {
         let props = read_form_properties(&mut reader, "F_Table0").unwrap();
         assert_eq!(props.form_name, "F_Table0");
         assert_eq!(props.object_type, FormObjectType::Form);
-        assert!(!props.properties.iter().any(|p| p.prop_id == 0x009C),
-            "empty form should not have RecordSource");
-        assert!(!props.properties.iter().any(|p| p.prop_id == 0x00F5),
-            "empty form should not have Filter");
+        assert!(
+            !props.properties.iter().any(|p| p.prop_id == 0x009C),
+            "empty form should not have RecordSource"
+        );
+        assert!(
+            !props.properties.iter().any(|p| p.prop_id == 0x00F5),
+            "empty form should not have Filter"
+        );
     }
 
     #[test]
@@ -1333,14 +1436,20 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let props = read_form_properties(&mut reader, "F_Table1").unwrap();
 
-        let rs = props.properties.iter().find(|p| p.prop_id == 0x009C)
+        let rs = props
+            .properties
+            .iter()
+            .find(|p| p.prop_id == 0x009C)
             .expect("RecordSource should exist");
         match &rs.value {
             BlobValue::Text(s) => assert_eq!(s.trim(), "SELECT * FROM Table1;"),
             other => panic!("expected Text, got {:?}", other),
         }
 
-        let filter = props.properties.iter().find(|p| p.prop_id == 0x00F5)
+        let filter = props
+            .properties
+            .iter()
+            .find(|p| p.prop_id == 0x00F5)
             .expect("Filter should exist");
         match &filter.value {
             BlobValue::Text(s) => assert_eq!(s, "[ID] > 0"),
@@ -1355,8 +1464,14 @@ mod tests {
         let props = read_form_properties(&mut reader, "F_Table1").unwrap();
 
         assert_eq!(find_control_source(&props, "ID").as_deref(), Some("ID"));
-        assert_eq!(find_control_source(&props, "ProductName").as_deref(), Some("ProductName"));
-        assert_eq!(find_control_source(&props, "Price").as_deref(), Some("Price"));
+        assert_eq!(
+            find_control_source(&props, "ProductName").as_deref(),
+            Some("ProductName")
+        );
+        assert_eq!(
+            find_control_source(&props, "Price").as_deref(),
+            Some("Price")
+        );
         assert_eq!(find_control_source(&props, "Qty").as_deref(), Some("Qty"));
     }
 
@@ -1377,9 +1492,15 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let props = read_form_properties(&mut reader, "F_Table1").unwrap();
 
-        let price = props.controls.iter().find(|c| c.name == "Price")
+        let price = props
+            .controls
+            .iter()
+            .find(|c| c.name == "Price")
             .expect("Price control should exist");
-        let fmt = price.properties.iter().find(|p| p.prop_id == 0x0026)
+        let fmt = price
+            .properties
+            .iter()
+            .find(|p| p.prop_id == 0x0026)
             .expect("Format property should exist on Price");
         match &fmt.value {
             BlobValue::Text(s) => assert_eq!(s, "¥#,##0;-¥#,##0"),
@@ -1394,14 +1515,20 @@ mod tests {
         let props = read_form_properties(&mut reader, "jp_フォーム_2").unwrap();
         assert_eq!(props.form_name, "jp_フォーム_2");
 
-        let rs = props.properties.iter().find(|p| p.prop_id == 0x009C)
+        let rs = props
+            .properties
+            .iter()
+            .find(|p| p.prop_id == 0x009C)
             .expect("RecordSource should exist");
         match &rs.value {
             BlobValue::Text(s) => assert_eq!(s, "jp_クエリ_02"),
             other => panic!("expected Text, got {:?}", other),
         }
 
-        assert_eq!(find_control_source(&props, "商品名").as_deref(), Some("商品名"));
+        assert_eq!(
+            find_control_source(&props, "商品名").as_deref(),
+            Some("商品名")
+        );
         assert_eq!(find_control_source(&props, "単価").as_deref(), Some("単価"));
         assert_eq!(find_control_source(&props, "個数").as_deref(), Some("個数"));
     }
@@ -1425,9 +1552,15 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let props = read_form_properties(&mut reader, "F_Table1").unwrap();
 
-        let btn = props.controls.iter().find(|c| c.name == "btn_msg")
+        let btn = props
+            .controls
+            .iter()
+            .find(|c| c.name == "btn_msg")
             .expect("btn_msg should exist");
-        let onclick = btn.properties.iter().find(|p| p.prop_id == 0x007E)
+        let onclick = btn
+            .properties
+            .iter()
+            .find(|p| p.prop_id == 0x007E)
             .expect("OnClick (0x007E) should exist on btn_msg");
         match &onclick.value {
             BlobValue::Text(s) => assert_eq!(s, "[Event Procedure]"),
@@ -1441,9 +1574,15 @@ mod tests {
         let mut reader = PageReader::open(&path).unwrap();
         let props = read_form_properties(&mut reader, "jp_フォーム_2").unwrap();
 
-        let cmd = props.controls.iter().find(|c| c.name == "コマンド22")
+        let cmd = props
+            .controls
+            .iter()
+            .find(|c| c.name == "コマンド22")
             .expect("コマンド22 should exist");
-        let onclick = cmd.properties.iter().find(|p| p.prop_id == 0x007E)
+        let onclick = cmd
+            .properties
+            .iter()
+            .find(|p| p.prop_id == 0x007E)
             .expect("OnClick (0x007E) should exist on コマンド22");
         match &onclick.value {
             BlobValue::Text(s) => assert_eq!(s, "[Event Procedure]"),
@@ -1472,17 +1611,27 @@ mod tests {
             ("btn_Exit", 0x00DF),
         ];
         for (btn_name, expected_prop_id) in event_cases {
-            let ctrl = props.controls.iter()
+            let ctrl = props
+                .controls
+                .iter()
                 .find(|c| c.name == *btn_name)
                 .unwrap_or_else(|| panic!("control '{}' not found", btn_name));
-            let event = ctrl.properties.iter()
+            let event = ctrl
+                .properties
+                .iter()
                 .find(|p| p.prop_id == *expected_prop_id)
-                .unwrap_or_else(|| panic!(
-                    "prop_id 0x{:04X} not found on '{}'", expected_prop_id, btn_name
-                ));
+                .unwrap_or_else(|| {
+                    panic!(
+                        "prop_id 0x{:04X} not found on '{}'",
+                        expected_prop_id, btn_name
+                    )
+                });
             match &event.value {
-                BlobValue::Text(s) => assert_eq!(s, "[Event Procedure]",
-                    "event value mismatch on '{}'", btn_name),
+                BlobValue::Text(s) => assert_eq!(
+                    s, "[Event Procedure]",
+                    "event value mismatch on '{}'",
+                    btn_name
+                ),
                 other => panic!("expected Text on '{}', got {:?}", btn_name, other),
             }
         }
@@ -1585,7 +1734,7 @@ mod tests {
         data.extend_from_slice(&0x00000006u32.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes()); // B
         data.extend_from_slice(&0u32.to_le_bytes()); // C
-        // 6 bytes data: value 42 as i32 + 2 padding bytes
+                                                     // 6 bytes data: value 42 as i32 + 2 padding bytes
         data.extend_from_slice(&42i32.to_le_bytes());
         data.extend_from_slice(&[0x00, 0x00]);
 
@@ -1604,7 +1753,7 @@ mod tests {
         data.extend_from_slice(&0x00000008u32.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes()); // B
         data.extend_from_slice(&0u32.to_le_bytes()); // C
-        // 8 bytes data: f64 value 1.23
+                                                     // 8 bytes data: f64 value 1.23
         data.extend_from_slice(&1.23f64.to_le_bytes());
         // 4 byte trailer
         data.extend_from_slice(&[0x00; 4]);
@@ -1627,7 +1776,7 @@ mod tests {
         data.extend_from_slice(&0x00000004u32.to_le_bytes());
         data.extend_from_slice(&0u32.to_le_bytes()); // B
         data.extend_from_slice(&0u32.to_le_bytes()); // C
-        // 8 bytes data: color 0x00FF0000 + 4 extra bytes
+                                                     // 8 bytes data: color 0x00FF0000 + 4 extra bytes
         data.extend_from_slice(&0x00FF0000u32.to_le_bytes());
         data.extend_from_slice(&[0x00; 4]);
 

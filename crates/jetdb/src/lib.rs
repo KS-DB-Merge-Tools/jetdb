@@ -1,7 +1,7 @@
 #![doc = include_str!("lib_doc.md")]
 
-pub(crate) mod crypto;
 pub mod catalog;
+pub(crate) mod crypto;
 pub mod data;
 pub mod ddl;
 pub mod encoding;
@@ -31,11 +31,11 @@ pub use table::{
 };
 
 pub use data::{read_table_rows, ReadResult, Value};
-pub use prop::{read_object_properties, ObjectProperties, PropMapType, Property, PropertyMap};
-pub use query::{query_to_sql, read_queries, QueryDef, QueryType};
-pub use vba::{read_vba_project, VbaModule, VbaModuleType, VbaProject};
 pub use form::{
     control_type_name, list_forms, read_form_properties, read_form_stream, read_form_type_info,
     BlobProperty, BlobValue, ControlInfo, ControlProperties, FormEntry, FormObjectType,
     FormProperties, FormStream, FormTypeInfo, StreamKind,
 };
+pub use prop::{read_object_properties, ObjectProperties, PropMapType, Property, PropertyMap};
+pub use query::{query_to_sql, read_queries, QueryDef, QueryType};
+pub use vba::{read_vba_project, VbaModule, VbaModuleType, VbaProject};

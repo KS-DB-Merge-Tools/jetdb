@@ -25,7 +25,9 @@ pub(crate) struct StorageEntry {
 // ---------------------------------------------------------------------------
 
 /// Read all entries from the MSysAccessStorage system table.
-pub(crate) fn read_storage_entries(reader: &mut PageReader) -> Result<Vec<StorageEntry>, FileError> {
+pub(crate) fn read_storage_entries(
+    reader: &mut PageReader,
+) -> Result<Vec<StorageEntry>, FileError> {
     // Find MSysAccessStorage in the catalog
     let catalog = catalog::read_catalog(reader)?;
     let entry = match catalog.iter().find(|e| e.name == "MSysAccessStorage") {
