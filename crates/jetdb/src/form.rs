@@ -1244,8 +1244,206 @@ mod tests {
         );
     }
 
-    // TODO: Integration tests with formPropTest.accdb (pending test data creation):
-    // - Verify RecordSource, Filter, ControlSource values
-    // - Verify report properties
-    // - Verify control property parsing with calculated fields
+    // -- Integration tests with formPropTest.accdb -------------------------
+
+    /// Helper: find ControlSource (0x001B) text value for a named control.
+    fn find_control_source(props: &FormProperties, ctrl_name: &str) -> Option<String> {
+        props
+            .controls
+            .iter()
+            .find(|c| c.name == ctrl_name)
+            .and_then(|c| c.properties.iter().find(|p| p.prop_id == 0x001B))
+            .and_then(|p| match &p.value {
+                BlobValue::Text(s) => Some(s.clone()),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn list_forms_form_prop_test() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let forms = list_forms(&mut reader).unwrap();
+        let mut names: Vec<&str> = forms.iter().map(|e| e.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, ["F_Buttons", "F_Table0", "F_Table1", "jp_フォーム_2"]);
+        assert!(forms.iter().all(|e| e.object_type == FormObjectType::Form));
+    }
+
+    #[test]
+    fn read_form_properties_empty_form() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Table0").unwrap();
+        assert_eq!(props.form_name, "F_Table0");
+        assert_eq!(props.object_type, FormObjectType::Form);
+        assert!(!props.properties.iter().any(|p| p.prop_id == 0x009C),
+            "empty form should not have RecordSource");
+        assert!(!props.properties.iter().any(|p| p.prop_id == 0x00F5),
+            "empty form should not have Filter");
+    }
+
+    #[test]
+    fn read_form_properties_record_source_and_filter() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Table1").unwrap();
+
+        let rs = props.properties.iter().find(|p| p.prop_id == 0x009C)
+            .expect("RecordSource should exist");
+        match &rs.value {
+            BlobValue::Text(s) => assert_eq!(s.trim(), "SELECT * FROM Table1;"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+
+        let filter = props.properties.iter().find(|p| p.prop_id == 0x00F5)
+            .expect("Filter should exist");
+        match &filter.value {
+            BlobValue::Text(s) => assert_eq!(s, "[ID] > 0"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_form_properties_control_source() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Table1").unwrap();
+
+        assert_eq!(find_control_source(&props, "ID").as_deref(), Some("ID"));
+        assert_eq!(find_control_source(&props, "ProductName").as_deref(), Some("ProductName"));
+        assert_eq!(find_control_source(&props, "Price").as_deref(), Some("Price"));
+        assert_eq!(find_control_source(&props, "Qty").as_deref(), Some("Qty"));
+    }
+
+    #[test]
+    fn read_form_properties_calculated_field() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Table1").unwrap();
+        assert_eq!(
+            find_control_source(&props, "Text_01_SubTotal").as_deref(),
+            Some("=[Price]*[Qty]")
+        );
+    }
+
+    #[test]
+    fn read_form_properties_format() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Table1").unwrap();
+
+        let price = props.controls.iter().find(|c| c.name == "Price")
+            .expect("Price control should exist");
+        let fmt = price.properties.iter().find(|p| p.prop_id == 0x0026)
+            .expect("Format property should exist on Price");
+        match &fmt.value {
+            BlobValue::Text(s) => assert_eq!(s, "¥#,##0;-¥#,##0"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_form_properties_japanese_form() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "jp_フォーム_2").unwrap();
+        assert_eq!(props.form_name, "jp_フォーム_2");
+
+        let rs = props.properties.iter().find(|p| p.prop_id == 0x009C)
+            .expect("RecordSource should exist");
+        match &rs.value {
+            BlobValue::Text(s) => assert_eq!(s, "jp_クエリ_02"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+
+        assert_eq!(find_control_source(&props, "商品名").as_deref(), Some("商品名"));
+        assert_eq!(find_control_source(&props, "単価").as_deref(), Some("単価"));
+        assert_eq!(find_control_source(&props, "個数").as_deref(), Some("個数"));
+    }
+
+    #[test]
+    fn read_form_properties_japanese_calculated_field() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "jp_フォーム_2").unwrap();
+        assert_eq!(
+            find_control_source(&props, "小計").as_deref(),
+            Some("=[単価]*[個数]")
+        );
+        // NOTE: 小計の Format は Access 側の不具合で壊れた値が格納されている
+        // ("=jp_[単価]"*["個数]") ためテスト対象外とする
+    }
+
+    #[test]
+    fn read_form_properties_onclick_event() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Table1").unwrap();
+
+        let btn = props.controls.iter().find(|c| c.name == "btn_msg")
+            .expect("btn_msg should exist");
+        let onclick = btn.properties.iter().find(|p| p.prop_id == 0x007E)
+            .expect("OnClick (0x007E) should exist on btn_msg");
+        match &onclick.value {
+            BlobValue::Text(s) => assert_eq!(s, "[Event Procedure]"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_form_properties_japanese_onclick_event() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "jp_フォーム_2").unwrap();
+
+        let cmd = props.controls.iter().find(|c| c.name == "コマンド22")
+            .expect("コマンド22 should exist");
+        let onclick = cmd.properties.iter().find(|p| p.prop_id == 0x007E)
+            .expect("OnClick (0x007E) should exist on コマンド22");
+        match &onclick.value {
+            BlobValue::Text(s) => assert_eq!(s, "[Event Procedure]"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn read_form_properties_all_event_types() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let props = read_form_properties(&mut reader, "F_Buttons").unwrap();
+
+        let event_cases: &[(&str, u16)] = &[
+            ("btn_Click", 0x007E),
+            ("btn_GotFocus", 0x0073),
+            ("btn_LostFocus", 0x0074),
+            ("btn_DblClick", 0x00E0),
+            ("btn_MouseDown", 0x006B),
+            ("btn_MouseUp", 0x006C),
+            ("btn_MouseMove", 0x006D),
+            ("btn_KeyDown", 0x0068),
+            ("btn_KeyUp", 0x0069),
+            ("btn_KeyPress", 0x006A),
+            ("btn_Enter", 0x00DE),
+            ("btn_Exit", 0x00DF),
+        ];
+        for (btn_name, expected_prop_id) in event_cases {
+            let ctrl = props.controls.iter()
+                .find(|c| c.name == *btn_name)
+                .unwrap_or_else(|| panic!("control '{}' not found", btn_name));
+            let event = ctrl.properties.iter()
+                .find(|p| p.prop_id == *expected_prop_id)
+                .unwrap_or_else(|| panic!(
+                    "prop_id 0x{:04X} not found on '{}'", expected_prop_id, btn_name
+                ));
+            match &event.value {
+                BlobValue::Text(s) => assert_eq!(s, "[Event Procedure]",
+                    "event value mismatch on '{}'", btn_name),
+                other => panic!("expected Text on '{}', got {:?}", btn_name, other),
+            }
+        }
+    }
+
+    // TODO: formPropTest.accdb にはレポートが含まれていないため、
+    // レポートプロパティのテストは別のテストデータで実施する
 }
