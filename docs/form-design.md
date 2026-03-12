@@ -85,7 +85,12 @@ Each entry:
   Type code: 2 bytes (Little-Endian)
   Padding: 2 bytes
   Index: 4 bytes (Little-Endian)
-  Control name: Shift-JIS (cp932), NUL-terminated, NUL-aligned
+  EventProcPrefix: Shift-JIS (cp932), NUL-terminated
+    No parentheses → same as control name
+    With parentheses → parentheses replaced with underscores (for VBA)
+  RealName: Shift-JIS (cp932), NUL-terminated
+    No parentheses → empty (NUL only)
+    With parentheses → actual control name
 ```
 
 Example controls included:
@@ -116,7 +121,7 @@ Form controls:
 | 0x1898 | Detail | 63 | Detail section |
 | 0x1899 | FormHeader | 63 | Form header section |
 | 0x189A | FormFooter | 63 | Form footer section |
-| 0x1EFF | (Unknown) | 318 | Frequently appears on calculated/system fields |
+| 0x1EFF | (Internal metadata) | 318 | Not a real control. Stores Caption/ControlSource values or control names from related objects. Excluded by parser |
 | 0x247F | EmptyCell | - | Empty cell (for layout) |
 
 Report controls:
@@ -141,7 +146,7 @@ Report controls:
 | 0x1F9C | PageFooter | 18 | Page footer section |
 
 Note: Form and report controls have a paired structure (e.g., 0x0C64 Label <-> 0x1B64 Label).
-Note: 0x1EFF is unidentified. It frequently appears on system-like fields such as create_at, updated_at.
+Note: 0x1EFF is not a real control but internal metadata. No corresponding entry exists in the SaveAsText (COM-based) control listing. These entries store Caption or ControlSource values, or control names from related objects (e.g., reports).
 Note: Counts are aggregated from all controls across 81 forms/reports in the IKP database.
 
 ## Blob (Design Body)
