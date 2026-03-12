@@ -139,6 +139,50 @@ fn vba_nonexistent_file() {
 }
 
 // ---------------------------------------------------------------------------
+// ACE12 (V2007) non-encrypted
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vba_list_v2007() {
+    let path = skip_if_missing!("vbaV2007.accdb");
+    let output = jetdb_bin()
+        .args(["vba", "list", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    assert!(!trimmed.is_empty(), "should have module names in output");
+    assert!(
+        trimmed.contains("Module1"),
+        "should contain Module1, got: {trimmed}"
+    );
+}
+
+#[test]
+fn vba_show_source_v2007() {
+    let path = skip_if_missing!("vbaV2007.accdb");
+    let output = jetdb_bin()
+        .args(["vba", "show", path.to_str().unwrap(), "Module1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Function"),
+        "should contain VBA keyword 'Function', got: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Encrypted .accdb — password, no password, wrong password
 // ---------------------------------------------------------------------------
 

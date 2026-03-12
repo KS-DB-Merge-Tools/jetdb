@@ -40,6 +40,87 @@ fn prop_table1() {
 }
 
 // ---------------------------------------------------------------------------
+// Jet3 (V1997)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prop_jet3() {
+    let path = skip_if_missing!("V1997/testV1997.mdb");
+    let output = jetdb_bin()
+        .args(["prop", path.to_str().unwrap(), "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Object: Table1"),
+        "should contain object header, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Table Properties:") || stdout.contains("Column:"),
+        "should contain property sections, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ACE12 (V2007)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prop_ace12() {
+    let path = skip_if_missing!("V2007/testV2007.accdb");
+    let output = jetdb_bin()
+        .args(["prop", path.to_str().unwrap(), "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Object: Table1"),
+        "should contain object header, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Table Properties:") || stdout.contains("Column:"),
+        "should contain property sections, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ACE14 (formPropTest.accdb)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn prop_ace14() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["prop", path.to_str().unwrap(), "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Object: Table1"),
+        "should contain object header, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Table Properties:") || stdout.contains("Column:"),
+        "should contain property sections, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Nonexistent table: empty output
 // ---------------------------------------------------------------------------
 

@@ -160,6 +160,76 @@ fn tables_conflict_t_and_big_t() {
 }
 
 // ---------------------------------------------------------------------------
+// Jet3 (V1997)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_jet3() {
+    let path = skip_if_missing!("V1997/testV1997.mdb");
+    let output = jetdb_bin()
+        .args(["tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.trim().is_empty(), "should list at least one user table");
+    for line in stdout.lines() {
+        assert!(!line.contains("MSys"), "default output should not contain system tables");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ACE12 (V2007) non-encrypted
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_ace12() {
+    let path = skip_if_missing!("V2007/testV2007.accdb");
+    let output = jetdb_bin()
+        .args(["tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.trim().is_empty(), "should list at least one user table");
+    for line in stdout.lines() {
+        assert!(!line.contains("MSys"), "default output should not contain system tables");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ACE14 (V2010)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_ace14() {
+    let path = skip_if_missing!("V2010/testV2010.accdb");
+    let output = jetdb_bin()
+        .args(["tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.trim().is_empty(), "should list at least one user table");
+}
+
+// ---------------------------------------------------------------------------
+// ACE17 (V2019)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tables_ace17() {
+    let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+    let output = jetdb_bin()
+        .args(["tables", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.trim().is_empty(), "should list at least one user table");
+}
+
+// ---------------------------------------------------------------------------
 // Encrypted .accdb
 // ---------------------------------------------------------------------------
 

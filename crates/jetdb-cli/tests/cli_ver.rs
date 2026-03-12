@@ -51,6 +51,21 @@ fn ver_ace14_short() {
 }
 
 // ---------------------------------------------------------------------------
+// ACE17 (V2019)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ver_ace17_short() {
+    let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+    let output = jetdb_bin()
+        .args(["ver", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "ACE17\n");
+}
+
+// ---------------------------------------------------------------------------
 // Long output (--long / -l)
 // ---------------------------------------------------------------------------
 

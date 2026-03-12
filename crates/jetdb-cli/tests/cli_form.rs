@@ -136,6 +136,29 @@ fn form_controls_not_found() {
 }
 
 // ---------------------------------------------------------------------------
+// ACE14 (formPropTest.accdb)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn form_list_ace14() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["form", "list", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("F_Table1"),
+        "should contain F_Table1, got: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Integration tests with formPropTest.accdb
 // ---------------------------------------------------------------------------
 

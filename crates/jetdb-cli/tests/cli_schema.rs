@@ -327,6 +327,29 @@ fn schema_ace12() {
 }
 
 // ---------------------------------------------------------------------------
+// ACE14 (V2010)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn schema_ace14() {
+    let path = skip_if_missing!("V2010/testV2010.accdb");
+    let output = jetdb_bin()
+        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Table: Table1"),
+        "should contain Table1 header for ACE14 file, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Columns:"),
+        "should contain Columns section for ACE14 file, got:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // RC4 CryptoAPI encrypted .accdb
 // ---------------------------------------------------------------------------
 

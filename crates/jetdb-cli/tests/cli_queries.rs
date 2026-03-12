@@ -181,6 +181,64 @@ fn queries_newline_delimiter_conflict() {
 }
 
 // ---------------------------------------------------------------------------
+// Jet3 (V1997): list queries
+// ---------------------------------------------------------------------------
+
+#[test]
+fn queries_list_jet3() {
+    let path = skip_if_missing!("V1997/queryTestV1997.mdb");
+    let output = jetdb_bin()
+        .args(["queries", "list", "-1", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() >= 9,
+        "queryTestV1997.mdb should have at least 9 queries, got {}",
+        lines.len()
+    );
+    assert!(
+        stdout.contains("SelectQuery"),
+        "should contain SelectQuery, got: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ACE14 (V2010): list queries
+// ---------------------------------------------------------------------------
+
+#[test]
+fn queries_list_v2010() {
+    let path = skip_if_missing!("V2010/queryTestV2010.accdb");
+    let output = jetdb_bin()
+        .args(["queries", "list", "-1", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() >= 9,
+        "queryTestV2010.accdb should have at least 9 queries, got {}",
+        lines.len()
+    );
+    assert!(
+        stdout.contains("SelectQuery"),
+        "should contain SelectQuery, got: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // ACE format (V2007): list queries
 // ---------------------------------------------------------------------------
 
