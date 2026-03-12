@@ -337,10 +337,11 @@ pub fn read_form_properties(
                 })
                 .unwrap_or_else(|| format!("Control_{i}"));
 
-            // Match with TypeInfo by name to get type_code.
+            // Match with TypeInfo by name, fallback to index.
             let type_code = type_info_controls
                 .iter()
                 .find(|c| c.name == blob_name)
+                .or_else(|| type_info_controls.get(i))
                 .map(|c| c.type_code)
                 .unwrap_or(0);
 
@@ -1489,4 +1490,79 @@ mod tests {
 
     // TODO: formPropTest.accdb にはレポートが含まれていないため、
     // レポートプロパティのテストは別のテストデータで実施する
+
+    #[test]
+    fn control_type_name_known_form_controls() {
+        let cases = [
+            (0x0B68, "CommandButton"),
+            (0x126D, "TextBox"),
+            (0x136F, "ComboBox"),
+            (0x066A, "CheckBox"),
+            (0x0A7A, "ToggleButton"),
+            (0x0E65, "Rectangle"),
+            (0x0F67, "Image"),
+            (0x1470, "SubForm"),
+            (0x1666, "Line"),
+            (0x247F, "EmptyCell"),
+            (0x1898, "Detail"),
+            (0x1998, "Detail"),
+            (0x1899, "FormHeader"),
+            (0x189A, "FormFooter"),
+        ];
+        for (code, expected) in cases {
+            assert_eq!(
+                control_type_name(code),
+                Some(expected),
+                "form control 0x{:04X} should be {:?}",
+                code,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn control_type_name_known_report_controls() {
+        let cases = [
+            (0x1B6D, "TextBox"),
+            (0x1B64, "Label"),
+            (0x1B70, "SubReport"),
+            (0x1B68, "CommandButton"),
+            (0x1B6A, "CheckBox"),
+            (0x1B6F, "ComboBox"),
+            (0x1B65, "Rectangle"),
+            (0x1B66, "Line"),
+            (0x1B67, "Image"),
+            (0x1999, "ReportHeader"),
+            (0x199A, "ReportFooter"),
+            (0x199D, "GroupHeader"),
+            (0x199E, "GroupFooter"),
+            (0x1F9B, "PageHeader"),
+            (0x1F9C, "PageFooter"),
+        ];
+        for (code, expected) in cases {
+            assert_eq!(
+                control_type_name(code),
+                Some(expected),
+                "report control 0x{:04X} should be {:?}",
+                code,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn control_type_name_unknown_returns_none() {
+        assert_eq!(control_type_name(0x0000), None);
+        assert_eq!(control_type_name(0xFFFF), None);
+        assert_eq!(control_type_name(0x1EFF), None);
+    }
+
+    #[test]
+    fn control_type_name_label_variants() {
+        // Both form label codes should return "Label"
+        assert_eq!(control_type_name(0x0C64), Some("Label"));
+        assert_eq!(control_type_name(0x0D64), Some("Label"));
+        // Report label too
+        assert_eq!(control_type_name(0x1B64), Some("Label"));
+    }
 }
