@@ -33,3 +33,7 @@ Thumbs.db
 
 # Task management (user-local)
 tasks/
+
+# Local Docker files for CI debugging
+Dockerfile.ci-test
+.dockerignore

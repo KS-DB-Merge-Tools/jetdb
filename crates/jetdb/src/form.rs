@@ -543,7 +543,16 @@ fn parse_type_info(data: &[u8]) -> Result<Vec<ControlInfo>, FileError> {
         });
     }
 
-    let entry_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
+    let entry_count = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
+
+    // Sanity check: entry_count must not exceed what the data can hold.
+    // Each entry is at least 8 bytes (ctrl_type u16 + padding u16 + index u32).
+    let max_entries = (data.len().saturating_sub(32)) / 8;
+    if entry_count > max_entries {
+        return Err(FileError::InvalidFormData {
+            reason: "TypeInfo entry count exceeds data size",
+        });
+    }
 
     let mut controls = Vec::with_capacity(entry_count);
     let mut pos = 32; // skip header
@@ -1078,8 +1087,8 @@ mod tests {
         let mut data = vec![0u8; 32];
         // Set magic
         data[0..4].copy_from_slice(&TYPEINFO_MAGIC.to_le_bytes());
-        // entry_count = 0
-        data[8..12].copy_from_slice(&0u32.to_le_bytes());
+        // entry_count = 0 (at offset 12)
+        data[12..16].copy_from_slice(&0u32.to_le_bytes());
 
         let result = parse_type_info(&data).unwrap();
         assert!(result.is_empty());
@@ -1090,8 +1099,8 @@ mod tests {
         let mut data = vec![0u8; 32];
         // Set magic
         data[0..4].copy_from_slice(&TYPEINFO_MAGIC.to_le_bytes());
-        // field2 = -1
-        data[8..12].copy_from_slice(&1u32.to_le_bytes()); // entry_count = 1
+        // entry_count = 1 (at offset 12)
+        data[12..16].copy_from_slice(&1u32.to_le_bytes());
 
         // Entry: ctrl_type=0x0B68, padding=0, index=0, name="Btn1\0\0"
         data.extend_from_slice(&[0x68, 0x0B]); // ctrl_type

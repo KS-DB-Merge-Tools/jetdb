@@ -74,15 +74,18 @@ Examples:
 TypeInfo is a list of names and type codes for all controls within a form.
 
 ```
-Header:
+Header (32 bytes):
   4 bytes: Magic number 0xACCDEAF7
+  4 bytes: Unknown (observed: 0x96)
+  4 bytes: Unknown (observed: 0xFFFFFFFF)
+  4 bytes: Entry count
   16 bytes: GUID
-  4 bytes: Entry count (estimated)
 
 Each entry:
-  Control name: Shift-JIS (cp932), NUL-terminated
   Type code: 2 bytes (Little-Endian)
+  Padding: 2 bytes
   Index: 4 bytes (Little-Endian)
+  Control name: Shift-JIS (cp932), NUL-terminated, NUL-aligned
 ```
 
 Example controls included:
