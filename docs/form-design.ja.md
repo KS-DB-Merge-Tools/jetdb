@@ -95,9 +95,80 @@ TypeInfo はフォーム内の全コントロールの名前と型コードの�
 
 フォームデザインの本体バイナリ。ControlSource、イベントプロシージャ、RecordSource 等の構造情報を含む。
 
-- サイズ: 60KB - 124KB（フォームの複雑さに依存）
-- 先頭バイト: `15 00 14 00 00 00 00 00 96 00 06 00 ...`（全フォーム共通のヘッダ）
-- バイナリフォーマットは**未解明**。公開仕様なし
+- サイズ: 918B（シンプル）〜 52KB+（複雑なフォーム）
+- 先頭バイト: `15 00 14 00 00 00 00 00`（全フォーム共通のヘッダ）
+- バイナリフォーマットの公開仕様なし。以下はリバースエンジニアリングによる解析結果
+
+### Blob 全体レイアウト
+
+```
+[ヘッダ 8B]
+  version(u16) = 0x0015, flags(u16) = 0x0014, reserved(u32) = 0
+[フォームレベル固定長プロパティ群]
+  RecordSource, Filter, FontName 等のフォーム全体に関わるプロパティ
+[フォームレベル可変長プロパティ群]
+[バイナリデータ（レイアウト情報、プリンタ設定、フォント定義等）]
+[コントロール別プロパティブロック ×N]
+  各コントロールが独立したプロパティブロックを持つ
+  Name(0x14) プロパティで始まる
+```
+
+### プロパティエントリのフォーマット
+
+プロパティ名は文字列として格納されず、数値 ID (u16) で識別される。
+
+**可変長プロパティ（文字列系）:**
+```
+prop_id(u16) + unknown(u16) + type(u32) + flags(u32) + byte_length(u32) + UTF-16LE data
+```
+
+type の値:
+- 0x0A — 名前・フォント系（Name, FontName, Format, RowSourceType, ColumnWidths）
+- 0x0C — テキスト・データ系（RecordSource, ControlSource, RowSource, Filter, Event, Caption）
+
+**固定長プロパティ（数値系）:**
+```
+prop_id(u16) + unknown(u16) + type(u32) + flags(u32) + data[type依存]
+```
+
+type の値:
+- 0x01 — Bool (4B)
+- 0x02 — Short (4B)
+- 0x03 — Long (6B)
+- 0x04 — Color (8B)
+- 0x08 — Double (8B)
+- 0x09 — GUID (16B)
+- 0x0B — Binary (可変長)
+
+### 判明しているプロパティ ID マッピング
+
+```
+ID      プロパティ名      カテゴリ
+------  ----------------  ------------------
+0x0011  Caption           コントロール表示テキスト
+0x0012  ColumnWidths      コンボボックス列幅
+0x0014  Name              コントロール名
+0x001B  ControlSource     フィールドバインド先
+0x0022  FontName          フォント名
+0x0026  Format            表示書式
+0x005B  RowSource         コンボボックスデータソース (SQL)
+0x005D  RowSourceType     データソース種別 (Table/Query)
+0x0068  OnClick           クリックイベント
+0x0072  OnDblClick        ダブルクリックイベント
+0x0074  OnMouseDown       マウスダウンイベント
+0x007E  OnKeyPress        キー押下イベント
+0x009C  RecordSource      フォーム/レポートのデータソース (SQL)
+0x00A0  FontName          フォームレベルフォント名
+0x00F5  Filter            フィルタ条件
+0x010A  LabelType         ラベル種別
+0x015A  InputMask         入力マスク
+```
+
+### セクション境界
+
+- フォームレベルプロパティとコントロール別プロパティの境界は、バイナリデータ（レイアウト情報等）を挟んで分かれている
+- 各コントロールブロックは Name(0x14) プロパティで始まる
+- TypeInfo のコントロール数 = Blob 内のコントロールブロック数
 
 ## SaveAsText との関係
 
