@@ -153,12 +153,20 @@ ID      プロパティ名      カテゴリ
 0x0026  Format            表示書式
 0x005B  RowSource         コンボボックスデータソース (SQL)
 0x005D  RowSourceType     データソース種別 (Table/Query)
-0x0068  OnClick           クリックイベント
-0x0072  OnDblClick        ダブルクリックイベント
-0x0074  OnMouseDown       マウスダウンイベント
-0x007E  OnKeyPress        キー押下イベント
+0x0068  OnKeyDown         キークリック時
+0x0069  OnKeyUp           キー解放時
+0x006A  OnKeyPress        キー入力時
+0x006B  OnMouseDown       マウスボタンクリック時
+0x006C  OnMouseUp         マウスボタン解放時
+0x006D  OnMouseMove       マウスボタン移動時
+0x0073  OnGotFocus        フォーカス取得後
+0x0074  OnLostFocus       フォーカス喪失後
+0x007E  OnClick           クリック時
 0x009C  RecordSource      フォーム/レポートのデータソース (SQL)
 0x00A0  FontName          フォームレベルフォント名
+0x00DE  OnEnter           フォーカス取得時
+0x00DF  OnExit            フォーカス喪失時
+0x00E0  OnDblClick        ダブルクリック時
 0x00F5  Filter            フィルタ条件
 0x010A  LabelType         ラベル種別
 0x015A  InputMask         入力マスク
@@ -195,12 +203,20 @@ ID      プロパティ名      用途
 0x0026  Format            表示書式
 0x005B  RowSource         コンボボックスデータソース (SQL)
 0x005D  RowSourceType     データソース種別 (Table/Query)
-0x0068  OnClick           クリックイベント
-0x0072  OnDblClick        ダブルクリックイベント
-0x0074  OnMouseDown       マウスダウンイベント
-0x007E  OnKeyPress        キー押下イベント
+0x0068  OnKeyDown         キークリック時
+0x0069  OnKeyUp           キー解放時
+0x006A  OnKeyPress        キー入力時
+0x006B  OnMouseDown       マウスボタンクリック時
+0x006C  OnMouseUp         マウスボタン解放時
+0x006D  OnMouseMove       マウスボタン移動時
+0x0073  OnGotFocus        フォーカス取得後
+0x0074  OnLostFocus       フォーカス喪失後
+0x007E  OnClick           クリック時
 0x009C  RecordSource      フォーム/レポートのデータソース
 0x00A0  FontName          フォームレベルフォント名
+0x00DE  OnEnter           フォーカス取得時
+0x00DF  OnExit            フォーカス喪失時
+0x00E0  OnDblClick        ダブルクリック時
 0x00F5  Filter            フィルタ条件
 0x010A  LabelType         ラベル種別
 0x015A  InputMask         入力マスク
