@@ -91,6 +91,56 @@ TypeInfo はフォーム内の全コントロールの名前と型コードの�
 - チェックボックス: `Check_管理者`
 - セクション: `フォームヘッダー`, `フォームフッター`, `詳細`
 
+### 型コード（TypeInfo type_code）マッピング
+
+IKP データベース（81フォーム/レポート）の全コントロール調査に基づく。
+
+フォーム系コントロール:
+
+コード    名称            出現数   説明
+------  --------------  ------  --------------------------
+0x066A  CheckBox           95   チェックボックス
+0x0A7A  ToggleButton        2   トグルボタン
+0x0B68  CommandButton     681   コマンドボタン
+0x0C64  Label             289   ラベル（独立）
+0x0D64  Label             662   ラベル（コントロール付属）
+0x0E65  Rectangle         111   四角形
+0x0F67  Image               1   イメージ
+0x126D  TextBox           735   テキストボックス
+0x136F  ComboBox          140   コンボボックス
+0x1470  SubForm             9   サブフォーム
+0x1666  Line              168   直線
+0x1898  Detail             63   詳細セクション
+0x1899  FormHeader         63   フォームヘッダーセクション
+0x189A  FormFooter         63   フォームフッターセクション
+0x1EFF  (不明)            318   計算フィールド/システムフィールドに多い
+0x247F  EmptyCell           -   空白セル（レイアウト用）
+
+レポート系コントロール:
+
+コード    名称            出現数   説明
+------  --------------  ------  --------------------------
+0x1B64  Label             333   ラベル
+0x1B65  Rectangle          14   四角形
+0x1B66  Line               49   直線
+0x1B67  Image               1   イメージ
+0x1B68  CommandButton      14   コマンドボタン
+0x1B6A  CheckBox            3   チェックボックス
+0x1B6D  TextBox           554   テキストボックス
+0x1B6F  ComboBox           32   コンボボックス
+0x1B70  SubReport           2   サブレポート
+0x1998  Detail             18   詳細セクション
+0x1999  ReportHeader       18   レポートヘッダーセクション
+0x199A  ReportFooter       18   レポートフッターセクション
+0x199D  GroupHeader        29   グループヘッダーセクション
+0x199E  GroupFooter        15   グループフッターセクション
+0x1F9B  PageHeader         18   ページヘッダーセクション
+0x1F9C  PageFooter         18   ページフッターセクション
+
+※ フォーム系とレポート系で対になる構造（例: 0x0C64 Label ↔ 0x1B64 Label）
+※ 0x1EFF は正体不明。create_at, updated_at 等のシステム的フィールドに多く出現
+※ 出現数は IKP データベース（81フォーム/レポート）の全コントロール集計
+
 ## Blob（デザイン本体）
 
 フォームデザインの本体バイナリ。ControlSource、イベントプロシージャ、RecordSource 等の構造情報を含む。

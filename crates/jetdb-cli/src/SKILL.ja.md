@@ -158,7 +158,7 @@ Form: F_クライアント一覧
     Filter        ([ID] > 0)
     FontName      ＭＳ Ｐゴシック
 
-  Control: Txt_名前 (0x126D)
+  Control: Txt_名前 (TextBox)
     Name           Txt_名前
     ControlSource  名前
     FontName       Meiryo UI

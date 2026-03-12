@@ -414,12 +414,12 @@ Parse the TypeInfo stream and list all controls in the form or report. Output is
 
 ```
 $ jetdb form controls database.accdb F_ClientList
-FormHeader    0x1899    0
-Detail        0x1898    1
-FormFooter    0x189A    2
-Btn_Search    0x0B68    3
-Txt_Name      0x126D    4
-Cmb_Status    0x136F    5
+FormHeader      FormHeader      0
+Detail          Detail          1
+FormFooter      FormFooter      2
+Btn_Search      CommandButton   3
+Txt_Name        TextBox         4
+Cmb_Status      ComboBox        5
 ```
 
 #### form props — Show form/report and control properties
@@ -444,15 +444,15 @@ Form: F_ClientList
     Caption       Client List
     FontName      MS PGothic
 
-  Control: FormHeader (0x1899)
+  Control: FormHeader (FormHeader)
     Name    FormHeader
 
-  Control: Txt_Name (0x126D)
+  Control: Txt_Name (TextBox)
     Name           Txt_Name
     ControlSource  Name
     FontName       Meiryo UI
 
-  Control: Cmb_Status (0x136F)
+  Control: Cmb_Status (ComboBox)
     Name           Cmb_Status
     RowSourceType  Table/Query
     RowSource      SELECT Status FROM T_StatusList;

@@ -158,7 +158,7 @@ Form: F_Customers
     Filter        ([Active] = True)
     FontName      MS UI Gothic
 
-  Control: Txt_Name (0x126D)
+  Control: Txt_Name (TextBox)
     Name           Txt_Name
     ControlSource  Name
     FontName       Meiryo UI

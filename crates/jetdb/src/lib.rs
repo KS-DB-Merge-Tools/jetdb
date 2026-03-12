@@ -35,7 +35,7 @@ pub use prop::{read_object_properties, ObjectProperties, PropMapType, Property, 
 pub use query::{query_to_sql, read_queries, QueryDef, QueryType};
 pub use vba::{read_vba_project, VbaModule, VbaModuleType, VbaProject};
 pub use form::{
-    list_forms, read_form_properties, read_form_stream, read_form_type_info, BlobProperty,
-    BlobValue, ControlInfo, ControlProperties, FormEntry, FormObjectType, FormProperties,
-    FormStream, FormTypeInfo, StreamKind,
+    control_type_name, list_forms, read_form_properties, read_form_stream, read_form_type_info,
+    BlobProperty, BlobValue, ControlInfo, ControlProperties, FormEntry, FormObjectType,
+    FormProperties, FormStream, FormTypeInfo, StreamKind,
 };

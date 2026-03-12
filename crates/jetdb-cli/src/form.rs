@@ -196,7 +196,10 @@ fn run_controls(args: &FormControlsArgs, password: Option<&str>) -> Result<(), j
     let type_info = jetdb::read_form_type_info(&mut reader, &args.name)?;
 
     for ctrl in &type_info.controls {
-        println!("{}\t0x{:04X}\t{}", ctrl.name, ctrl.type_code, ctrl.index);
+        let type_name = jetdb::control_type_name(ctrl.type_code)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("0x{:04X}", ctrl.type_code));
+        println!("{}\t{}\t{}", ctrl.name, type_name, ctrl.index);
     }
 
     Ok(())
@@ -220,7 +223,10 @@ fn run_props(args: &FormPropsArgs, password: Option<&str>) -> Result<(), jetdb::
 
     for ctrl in &form_props.controls {
         println!();
-        println!("  Control: {} (0x{:04X})", ctrl.name, ctrl.type_code);
+        let type_label = jetdb::control_type_name(ctrl.type_code)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("0x{:04X}", ctrl.type_code));
+        println!("  Control: {} ({})", ctrl.name, type_label);
         print_properties(&ctrl.properties);
     }
 

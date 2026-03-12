@@ -234,6 +234,45 @@ pub fn prop_id_name(prop_id: u16) -> Option<&'static str> {
     }
 }
 
+/// Return the known control type name for a given TypeInfo type_code, or `None`.
+pub fn control_type_name(type_code: u16) -> Option<&'static str> {
+    match type_code {
+        // Form controls
+        0x066A => Some("CheckBox"),
+        0x0A7A => Some("ToggleButton"),
+        0x0B68 => Some("CommandButton"),
+        0x0C64 | 0x0D64 => Some("Label"),
+        0x0E65 => Some("Rectangle"),
+        0x0F67 => Some("Image"),
+        0x126D => Some("TextBox"),
+        0x136F => Some("ComboBox"),
+        0x1470 => Some("SubForm"),
+        0x1666 => Some("Line"),
+        0x1898 | 0x1998 => Some("Detail"),
+        0x1899 => Some("FormHeader"),
+        0x189A => Some("FormFooter"),
+        0x247F => Some("EmptyCell"),
+        // Report controls
+        0x1B64 => Some("Label"),
+        0x1B65 => Some("Rectangle"),
+        0x1B66 => Some("Line"),
+        0x1B67 => Some("Image"),
+        0x1B68 => Some("CommandButton"),
+        0x1B6A => Some("CheckBox"),
+        0x1B6D => Some("TextBox"),
+        0x1B6F => Some("ComboBox"),
+        0x1B70 => Some("SubReport"),
+        // Report sections
+        0x1999 => Some("ReportHeader"),
+        0x199A => Some("ReportFooter"),
+        0x199D => Some("GroupHeader"),
+        0x199E => Some("GroupFooter"),
+        0x1F9B => Some("PageHeader"),
+        0x1F9C => Some("PageFooter"),
+        _ => None,
+    }
+}
+
 impl BlobProperty {
     /// Return the known property name, or `None` for unknown IDs.
     pub fn name(&self) -> Option<&'static str> {
@@ -298,8 +337,12 @@ pub fn read_form_properties(
                 })
                 .unwrap_or_else(|| format!("Control_{i}"));
 
-            // Match with TypeInfo by index to get type_code.
-            let type_code = type_info_controls.get(i).map(|c| c.type_code).unwrap_or(0);
+            // Match with TypeInfo by name to get type_code.
+            let type_code = type_info_controls
+                .iter()
+                .find(|c| c.name == blob_name)
+                .map(|c| c.type_code)
+                .unwrap_or(0);
 
             ControlProperties {
                 name: blob_name,

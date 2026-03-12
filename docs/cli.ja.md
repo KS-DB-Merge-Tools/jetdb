@@ -413,12 +413,12 @@ TypeInfo ストリームをパースして、フォーム/レポート内の全�
 
 ```
 $ jetdb form controls database.accdb F_クライアント一覧
-フォームヘッダー    0x1899    0
-詳細                0x1898    1
-フォームフッター    0x189A    2
-Btn_検索            0x0B68    3
-Txt_名前            0x126D    4
-Cmb_ステータス      0x136F    5
+フォームヘッダー    FormHeader      0
+詳細                Detail          1
+フォームフッター    FormFooter      2
+Btn_検索            CommandButton   3
+Txt_名前            TextBox         4
+Cmb_ステータス      ComboBox        5
 ```
 
 #### form props — フォーム/レポートとコントロールのプロパティ表示
@@ -443,15 +443,15 @@ Form: F_クライアント一覧
     Caption       クライアント一覧
     FontName      ＭＳ Ｐゴシック
 
-  Control: フォームヘッダー (0x1899)
+  Control: フォームヘッダー (FormHeader)
     Name    フォームヘッダー
 
-  Control: Txt_名前 (0x126D)
+  Control: Txt_名前 (TextBox)
     Name           Txt_名前
     ControlSource  名前
     FontName       Meiryo UI
 
-  Control: Cmb_ステータス (0x136F)
+  Control: Cmb_ステータス (ComboBox)
     Name           Cmb_ステータス
     RowSourceType  Table/Query
     RowSource      SELECT ステータス FROM T_ステータス一覧;
