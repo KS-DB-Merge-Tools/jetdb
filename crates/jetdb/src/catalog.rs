@@ -198,6 +198,12 @@ mod tests {
         assert_catalog(&path);
     }
 
+    #[test]
+    fn ace17_read_catalog() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        assert_catalog(&path);
+    }
+
     // -- table_names tests ----------------------------------------------------
 
     fn assert_table_names(path: &std::path::Path) {
@@ -236,6 +242,12 @@ mod tests {
     #[test]
     fn ace14_table_names() {
         let path = skip_if_missing!("V2010/testV2010.accdb");
+        assert_table_names(&path);
+    }
+
+    #[test]
+    fn ace17_table_names() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
         assert_table_names(&path);
     }
 
@@ -339,5 +351,19 @@ mod tests {
         ];
         let names = filter_user_tables(catalog);
         assert_eq!(names, vec!["Employees", "Departments"]);
+    }
+
+    #[test]
+    fn japanese_table_name() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = read_catalog(&mut reader).unwrap();
+        let jp_table = catalog.iter().find(|e| e.name == "jp_テーブル2");
+        assert!(
+            jp_table.is_some(),
+            "catalog should contain jp_テーブル2, found: {:?}",
+            catalog.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(jp_table.unwrap().object_type, ObjectType::Table);
     }
 }

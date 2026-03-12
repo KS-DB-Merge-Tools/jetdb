@@ -30,3 +30,10 @@ Thumbs.db
 
 # Local reference repos (shallow clones for comparison)
 /tmp/
+
+# Task management (user-local)
+tasks/
+
+# Local Docker files for CI debugging
+Dockerfile.ci-test
+.dockerignore

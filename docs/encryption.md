@@ -11,16 +11,14 @@ Microsoft Access databases use different encryption schemes depending on the fil
 
 For .accdb files, the EncryptionInfo is stored at page 0 offset 0x299. The first 4 bytes contain `vMajor` (u16 LE) and `vMinor` (u16 LE), which determine the encryption scheme:
 
-```
-vMajor    vMinor    Scheme                    Status
-------    ------    ----------------------    ----------------
-4         4         Agile Encryption          Supported
-2/3/4     2         RC4 CryptoAPI             Supported
-2/3/4     2+AES     NonStandard AES           Supported
-3/4       3         Extensible Encryption     Not supported
-1         1         Office Binary Doc RC4     Not supported
--         -         Jet RC4 (.mdb)            No password needed
-```
+| vMajor | vMinor | Scheme | Status |
+|--------|--------|--------|--------|
+| 4 | 4 | Agile Encryption | Supported |
+| 2/3/4 | 2 | RC4 CryptoAPI | Supported |
+| 2/3/4 | 2+AES | NonStandard AES | Supported |
+| 3/4 | 3 | Extensible Encryption | Not supported |
+| 1 | 1 | Office Binary Doc RC4 | Not supported |
+| - | - | Jet RC4 (.mdb) | No password needed |
 
 For vMajor=2/3/4, vMinor=2: The flags field (offset 4 in EncryptionInfo) determines the sub-type:
 - `FCRYPTO_API_FLAG (0x04)` set + `FAES_FLAG (0x20)` set: Standard AES

@@ -1,6 +1,6 @@
 [package]
 name = "jetdb"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Pure Rust library for reading Microsoft Access (.mdb/.accdb) files"
@@ -25,3 +25,4 @@ sha2 = "0.10"
 quick-xml = "0.37"
 subtle = "2.6"
 zeroize = "1.8"
+encoding_rs = "0.8.35"

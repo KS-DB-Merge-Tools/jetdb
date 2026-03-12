@@ -65,6 +65,8 @@ cargo doc --workspace
 rust-code-analysis-cli -m -p crates/ -O json
 ```
 
+JSON 出力は `complexity-filter` クレート（`crates/complexity-filter/`）を通して、閾値（CC>=10、Cognitive>=10、SLOC>=50）を超える関数のみを表示する。`quality-check.sh` スクリプトが自動的にこの処理を行う。
+
 インストール:
 
 ```bash
@@ -99,12 +101,29 @@ cargo install cargo-llvm-cov
 
 > **注意**: `llvm-tools-preview` コンポーネントが必要。初回実行時に自動でインストールされる。
 
-## 推奨実行順序
+#### カバレッジの注意点
+
+`relationship.rs`（約76%）と `vba.rs`（約80%）が最も行カバレッジが低い。`crypto.rs`（約88%）も平均以下である。これらのファイルの未カバー行はすべてエラーマッピングクロージャ (`.map_err`)、カラム欠損時の `.ok_or()` エラーパス、XMLパースのエラー分岐、不正データ時の `continue` 分岐など、正常なデータベースでは到達しない異常系パスである。llvm-cov はクロージャを独立した関数としてカウントするため関数カバレッジも低く見えるが、正常系のロジック（全AESキーサイズ、全ハッシュアルゴリズム、ページ復号化を含む）はすべてテスト済み。
+
+## 品質チェックスクリプト
+
+`scripts/quality-check.sh` がすべてのチェックを順番に実行し、合否を報告する。手動で個別に実行するのではなく、常にこのスクリプトを使用すること。
+
+```bash
+scripts/quality-check.sh
+```
+
+テストまたは clippy が失敗した場合はその場で中断する。その他のチェック（audit、doc、coverage、complexity）は失敗しても続行する。
+
+## 実行順序
+
+品質チェックスクリプトは以下の順序でチェックを実行する:
 
 1. `cargo test` — まず既存テストが通ることを確認
-2. `cargo llvm-cov --workspace` — テストカバレッジを計測
-3. `cargo clippy -- -D warnings` — コード品質のチェック
-4. `cargo audit` — セキュリティ上の問題がないか確認
-5. `cargo doc --workspace` — ドキュメントが正しく生成されるか確認
+2. `cargo clippy -- -D warnings` — コード品質のチェック
+3. `cargo audit` — セキュリティ上の問題がないか確認
+4. `cargo doc --workspace` — ドキュメントが正しく生成されるか確認
+5. `cargo llvm-cov --workspace` — テストカバレッジを計測
+6. `rust-code-analysis-cli` — コードの複雑度を計測
 
-テストが通らない状態で他のチェックを行っても意味がないため、`cargo test` を最初に実行する。`cargo llvm-cov` はカバレッジ計測のためテストの直後に実行する。`cargo clippy` はコードの問題を検出するため早い段階で実行する。`cargo audit` と `cargo doc` は独立しているため順序は問わない。
+テストと clippy は致命的 — いずれかが失敗するとスクリプトは中断する。カバレッジと複雑度は実行時間が長いため最後に実行する。

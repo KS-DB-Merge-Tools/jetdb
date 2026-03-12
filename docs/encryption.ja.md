@@ -11,16 +11,14 @@ Microsoft Access データベースはファイル形式に応じて異なる暗
 
 .accdb ファイルでは、EncryptionInfo はページ 0 のオフセット 0x299 に格納されます。先頭 4 バイトに `vMajor` (u16 LE) と `vMinor` (u16 LE) が含まれ、暗号化方式を決定します：
 
-```
-vMajor    vMinor    方式                      状態
-------    ------    ----------------------    ----------------
-4         4         Agile Encryption          対応済
-2/3/4     2         RC4 CryptoAPI             対応済
-2/3/4     2+AES     NonStandard AES           対応済
-3/4       3         Extensible Encryption     未対応
-1         1         Office Binary Doc RC4     未対応
--         -         Jet RC4 (.mdb)            パスワード不要
-```
+| vMajor | vMinor | 方式 | 状態 |
+|--------|--------|------|------|
+| 4 | 4 | Agile Encryption | 対応済 |
+| 2/3/4 | 2 | RC4 CryptoAPI | 対応済 |
+| 2/3/4 | 2+AES | NonStandard AES | 対応済 |
+| 3/4 | 3 | Extensible Encryption | 未対応 |
+| 1 | 1 | Office Binary Doc RC4 | 未対応 |
+| - | - | Jet RC4 (.mdb) | パスワード不要 |
 
 vMajor=2/3/4, vMinor=2 の場合、flags フィールド（EncryptionInfo のオフセット 4）でサブタイプが決まります：
 - `FCRYPTO_API_FLAG (0x04)` + `FAES_FLAG (0x20)` の両方がセット: Standard AES

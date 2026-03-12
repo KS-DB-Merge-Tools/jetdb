@@ -177,9 +177,11 @@ fn get_attr(
             reason: format!("invalid XML attribute: {err}"),
         })?;
         if attr.key.as_ref() == name {
-            let val = attr.unescape_value().map_err(|err| FileError::UnsupportedEncryption {
-                reason: format!("invalid XML attribute value: {err}"),
-            })?;
+            let val = attr
+                .unescape_value()
+                .map_err(|err| FileError::UnsupportedEncryption {
+                    reason: format!("invalid XML attribute value: {err}"),
+                })?;
             return Ok(Some(val.into_owned()));
         }
     }
@@ -213,9 +215,11 @@ fn parse_u32(val: &str, tag: &str, attr: &str) -> Result<u32, FileError> {
 }
 
 fn parse_base64(val: &str, tag: &str, attr: &str) -> Result<Vec<u8>, FileError> {
-    BASE64.decode(val).map_err(|_| FileError::UnsupportedEncryption {
-        reason: format!("invalid base64 in {tag}.{attr}"),
-    })
+    BASE64
+        .decode(val)
+        .map_err(|_| FileError::UnsupportedEncryption {
+            reason: format!("invalid base64 in {tag}.{attr}"),
+        })
 }
 
 /// Data extracted from the `<keyData>` element.
@@ -314,7 +318,9 @@ pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<EncryptionPar
 
     match (v_major, v_minor) {
         // Agile Encryption (MS-OFFCRYPTO §2.3.4.10)
-        (4, 4) => parse_agile_encryption_info(&info_data[4..]).map(|p| Some(EncryptionParams::Agile(p))),
+        (4, 4) => {
+            parse_agile_encryption_info(&info_data[4..]).map(|p| Some(EncryptionParams::Agile(p)))
+        }
 
         // Office Binary Doc RC4 (not supported)
         (1, 1) => Err(FileError::UnsupportedEncryption {
@@ -333,17 +339,21 @@ pub(crate) fn parse_encryption_info(page0: &[u8]) -> Result<Option<EncryptionPar
                     reason: "EncryptionInfo too short for CryptoAPI flags".to_string(),
                 });
             }
-            let flags = u32::from_le_bytes([info_data[4], info_data[5], info_data[6], info_data[7]]);
+            let flags =
+                u32::from_le_bytes([info_data[4], info_data[5], info_data[6], info_data[7]]);
 
             if flags & FCRYPTO_API_FLAG == 0 {
                 return Err(FileError::UnsupportedEncryption {
-                    reason: format!("CryptoAPI flag not set in EncryptionInfo flags: 0x{flags:08x}"),
+                    reason: format!(
+                        "CryptoAPI flag not set in EncryptionInfo flags: 0x{flags:08x}"
+                    ),
                 });
             }
 
             if flags & FAES_FLAG != 0 {
                 // Standard AES Encryption (MS-OFFCRYPTO §2.3.4.5)
-                parse_standard_aes_info(&info_data[8..], 50_000).map(|p| Some(EncryptionParams::StandardAes(p)))
+                parse_standard_aes_info(&info_data[8..], 50_000)
+                    .map(|p| Some(EncryptionParams::StandardAes(p)))
             } else {
                 // Try RC4 CryptoAPI first; if algId is AES, fall back to NonStandard AES
                 parse_cryptoapi_info(&info_data[8..])
@@ -426,7 +436,12 @@ fn read_u32(data: &[u8], off: usize) -> Result<u32, FileError> {
             reason: "EncryptionHeader/Verifier truncated".to_string(),
         });
     }
-    Ok(u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]))
+    Ok(u32::from_le_bytes([
+        data[off],
+        data[off + 1],
+        data[off + 2],
+        data[off + 3],
+    ]))
 }
 
 /// Parse a CryptoAPI EncryptionHeader + EncryptionVerifier.
@@ -434,9 +449,11 @@ fn read_u32(data: &[u8], off: usize) -> Result<u32, FileError> {
 fn parse_cryptoapi_info(data: &[u8]) -> Result<Option<EncryptionParams>, FileError> {
     // headerSize (4 bytes) followed by EncryptionHeader
     let header_size = read_u32(data, 0)? as usize;
-    let header_end = 4usize.checked_add(header_size).ok_or(FileError::UnsupportedEncryption {
-        reason: "EncryptionHeader size overflow".to_string(),
-    })?;
+    let header_end = 4usize
+        .checked_add(header_size)
+        .ok_or(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader size overflow".to_string(),
+        })?;
     if data.len() < header_end {
         return Err(FileError::UnsupportedEncryption {
             reason: "EncryptionHeader extends beyond EncryptionInfo".to_string(),
@@ -477,9 +494,27 @@ fn parse_cryptoapi_info(data: &[u8]) -> Result<Option<EncryptionParams>, FileErr
         ALGID_AES_128 | ALGID_AES_192 | ALGID_AES_256 => {
             // NonStandard AES: same binary format as Standard AES but iterations=0
             let key_size = match alg_id {
-                ALGID_AES_128 => if key_size == 0 { 128 } else { key_size },
-                ALGID_AES_192 => if key_size == 0 { 192 } else { key_size },
-                ALGID_AES_256 => if key_size == 0 { 256 } else { key_size },
+                ALGID_AES_128 => {
+                    if key_size == 0 {
+                        128
+                    } else {
+                        key_size
+                    }
+                }
+                ALGID_AES_192 => {
+                    if key_size == 0 {
+                        192
+                    } else {
+                        key_size
+                    }
+                }
+                ALGID_AES_256 => {
+                    if key_size == 0 {
+                        256
+                    } else {
+                        key_size
+                    }
+                }
                 _ => unreachable!(),
             };
             if key_size != 128 && key_size != 192 && key_size != 256 {
@@ -497,11 +532,16 @@ fn parse_cryptoapi_info(data: &[u8]) -> Result<Option<EncryptionParams>, FileErr
 }
 
 /// Parse a Standard AES EncryptionInfo (with headerSize + EncryptionHeader + EncryptionVerifier).
-fn parse_standard_aes_info(data: &[u8], hash_iterations: u32) -> Result<StandardAesParams, FileError> {
+fn parse_standard_aes_info(
+    data: &[u8],
+    hash_iterations: u32,
+) -> Result<StandardAesParams, FileError> {
     let header_size = read_u32(data, 0)? as usize;
-    let header_end = 4usize.checked_add(header_size).ok_or(FileError::UnsupportedEncryption {
-        reason: "EncryptionHeader size overflow".to_string(),
-    })?;
+    let header_end = 4usize
+        .checked_add(header_size)
+        .ok_or(FileError::UnsupportedEncryption {
+            reason: "EncryptionHeader size overflow".to_string(),
+        })?;
     if data.len() < header_end {
         return Err(FileError::UnsupportedEncryption {
             reason: "EncryptionHeader extends beyond EncryptionInfo".to_string(),
@@ -518,12 +558,32 @@ fn parse_standard_aes_info(data: &[u8], hash_iterations: u32) -> Result<Standard
     let key_size_raw = read_u32(header_data, 16)?;
 
     let key_size = match alg_id {
-        ALGID_AES_128 => if key_size_raw == 0 { 128 } else { key_size_raw },
-        ALGID_AES_192 => if key_size_raw == 0 { 192 } else { key_size_raw },
-        ALGID_AES_256 => if key_size_raw == 0 { 256 } else { key_size_raw },
-        _ => return Err(FileError::UnsupportedEncryption {
-            reason: format!("Standard AES: unexpected algId 0x{alg_id:04x}"),
-        }),
+        ALGID_AES_128 => {
+            if key_size_raw == 0 {
+                128
+            } else {
+                key_size_raw
+            }
+        }
+        ALGID_AES_192 => {
+            if key_size_raw == 0 {
+                192
+            } else {
+                key_size_raw
+            }
+        }
+        ALGID_AES_256 => {
+            if key_size_raw == 0 {
+                256
+            } else {
+                key_size_raw
+            }
+        }
+        _ => {
+            return Err(FileError::UnsupportedEncryption {
+                reason: format!("Standard AES: unexpected algId 0x{alg_id:04x}"),
+            })
+        }
     };
 
     let verifier_data = &data[header_end..];
@@ -757,14 +817,18 @@ pub(crate) fn verify_password(
     let iv = make_iv(salt, params.pe_block_size);
 
     // Decrypt verifierHashInput
-    let verifier = Zeroizing::new(
-        aes_cbc_decrypt(&key_input, &iv, &params.encrypted_verifier_hash_input)?,
-    );
+    let verifier = Zeroizing::new(aes_cbc_decrypt(
+        &key_input,
+        &iv,
+        &params.encrypted_verifier_hash_input,
+    )?);
 
     // Decrypt verifierHashValue
-    let expected_hash_full = Zeroizing::new(
-        aes_cbc_decrypt(&key_hash_value, &iv, &params.encrypted_verifier_hash_value)?,
-    );
+    let expected_hash_full = Zeroizing::new(aes_cbc_decrypt(
+        &key_hash_value,
+        &iv,
+        &params.encrypted_verifier_hash_value,
+    )?);
 
     // Verify: hash(verifier) == expected_hash (truncated to hash size)
     let hash_size = algo.hash_size();
@@ -781,9 +845,11 @@ pub(crate) fn verify_password(
     }
 
     // Decrypt the database key
-    let db_key = Zeroizing::new(
-        aes_cbc_decrypt(&key_enc_key, &iv, &params.encrypted_key_value)?,
-    );
+    let db_key = Zeroizing::new(aes_cbc_decrypt(
+        &key_enc_key,
+        &iv,
+        &params.encrypted_key_value,
+    )?);
 
     // Truncate to keyData keyBits / 8
     let db_key_len = params.key_bits / 8;
@@ -1018,9 +1084,15 @@ fn derive_standard_aes_key(iter_hash: &[u8], block_bytes: &[u8], key_byte_len: u
     let final_hash = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &buf));
 
     // x1 = SHA1(genXBytes(final_hash, 0x36))
-    let x1 = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x36)));
+    let x1 = Zeroizing::new(hash_bytes(
+        HashAlgorithm::Sha1,
+        &gen_x_bytes(&final_hash, 0x36),
+    ));
     // x2 = SHA1(genXBytes(final_hash, 0x5C))
-    let x2 = Zeroizing::new(hash_bytes(HashAlgorithm::Sha1, &gen_x_bytes(&final_hash, 0x5C)));
+    let x2 = Zeroizing::new(hash_bytes(
+        HashAlgorithm::Sha1,
+        &gen_x_bytes(&final_hash, 0x5C),
+    ));
 
     // enc_key = (x1 || x2)[..key_byte_len]
     let mut full = Vec::with_capacity(x1.len() + x2.len());
@@ -1219,10 +1291,22 @@ mod tests {
 
     #[test]
     fn hash_algorithm_from_str_valid() {
-        assert_eq!(HashAlgorithm::from_str("SHA1").unwrap(), HashAlgorithm::Sha1);
-        assert_eq!(HashAlgorithm::from_str("SHA256").unwrap(), HashAlgorithm::Sha256);
-        assert_eq!(HashAlgorithm::from_str("SHA384").unwrap(), HashAlgorithm::Sha384);
-        assert_eq!(HashAlgorithm::from_str("SHA512").unwrap(), HashAlgorithm::Sha512);
+        assert_eq!(
+            HashAlgorithm::from_str("SHA1").unwrap(),
+            HashAlgorithm::Sha1
+        );
+        assert_eq!(
+            HashAlgorithm::from_str("SHA256").unwrap(),
+            HashAlgorithm::Sha256
+        );
+        assert_eq!(
+            HashAlgorithm::from_str("SHA384").unwrap(),
+            HashAlgorithm::Sha384
+        );
+        assert_eq!(
+            HashAlgorithm::from_str("SHA512").unwrap(),
+            HashAlgorithm::Sha512
+        );
     }
 
     #[test]
@@ -1255,33 +1339,65 @@ mod tests {
         let data = b"hello";
         let result = hash_bytes(HashAlgorithm::Sha1, data);
         assert_eq!(result.len(), 20);
-        assert_eq!(
-            hex(&result),
-            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"
-        );
+        assert_eq!(hex(&result), "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
     }
 
     #[test]
     fn derive_key_length() {
-        let key = derive_key("test", &[0u8; 16], 100, &[0u8; 8], HashAlgorithm::Sha256, 128);
+        let key = derive_key(
+            "test",
+            &[0u8; 16],
+            100,
+            &[0u8; 8],
+            HashAlgorithm::Sha256,
+            128,
+        );
         assert_eq!(key.len(), 16); // 128 bits / 8
     }
 
     #[test]
     fn derive_key_length_256() {
-        let key = derive_key("test", &[0u8; 16], 100, &[0u8; 8], HashAlgorithm::Sha256, 256);
+        let key = derive_key(
+            "test",
+            &[0u8; 16],
+            100,
+            &[0u8; 8],
+            HashAlgorithm::Sha256,
+            256,
+        );
         assert_eq!(key.len(), 32); // 256 bits / 8
     }
 
     #[test]
     fn derive_key_deterministic() {
         // Same inputs must produce the same output
-        let k1 = derive_key("pw", &[1, 2, 3, 4], 10, &[0xAA; 8], HashAlgorithm::Sha256, 128);
-        let k2 = derive_key("pw", &[1, 2, 3, 4], 10, &[0xAA; 8], HashAlgorithm::Sha256, 128);
+        let k1 = derive_key(
+            "pw",
+            &[1, 2, 3, 4],
+            10,
+            &[0xAA; 8],
+            HashAlgorithm::Sha256,
+            128,
+        );
+        let k2 = derive_key(
+            "pw",
+            &[1, 2, 3, 4],
+            10,
+            &[0xAA; 8],
+            HashAlgorithm::Sha256,
+            128,
+        );
         assert_eq!(*k1, *k2);
 
         // Different block key → different output
-        let k3 = derive_key("pw", &[1, 2, 3, 4], 10, &[0xBB; 8], HashAlgorithm::Sha256, 128);
+        let k3 = derive_key(
+            "pw",
+            &[1, 2, 3, 4],
+            10,
+            &[0xBB; 8],
+            HashAlgorithm::Sha256,
+            128,
+        );
         assert_ne!(*k1, *k3);
     }
 
@@ -1375,7 +1491,11 @@ mod tests {
 
         // Verify correct password
         let db_key = verify_password(agile_params, "1234567890");
-        assert!(db_key.is_ok(), "correct password should verify: {:?}", db_key.err());
+        assert!(
+            db_key.is_ok(),
+            "correct password should verify: {:?}",
+            db_key.err()
+        );
         let db_key = db_key.unwrap();
         assert_eq!(db_key.len(), agile_params.key_bits / 8);
 
@@ -1415,7 +1535,11 @@ mod tests {
 
         // Correct password
         let base_hash = verify_password_rc4_cryptoapi(params, "Test123");
-        assert!(base_hash.is_ok(), "correct password should verify: {:?}", base_hash.err());
+        assert!(
+            base_hash.is_ok(),
+            "correct password should verify: {:?}",
+            base_hash.err()
+        );
 
         // Wrong password
         let result = verify_password_rc4_cryptoapi(params, "WrongPassword");
@@ -1437,12 +1561,19 @@ mod tests {
         };
 
         assert!(params.key_size == 128 || params.key_size == 192 || params.key_size == 256);
-        assert_eq!(params.hash_iterations, 0, "NonStandard AES has 0 iterations");
+        assert_eq!(
+            params.hash_iterations, 0,
+            "NonStandard AES has 0 iterations"
+        );
         assert!(params.verifier_hash_size > 0 && params.verifier_hash_size <= 20);
 
         // Correct password
         let iter_hash = verify_password_standard_aes(params, "password");
-        assert!(iter_hash.is_ok(), "correct password should verify: {:?}", iter_hash.err());
+        assert!(
+            iter_hash.is_ok(),
+            "correct password should verify: {:?}",
+            iter_hash.err()
+        );
 
         // Wrong password
         let result = verify_password_standard_aes(params, "WrongPassword");
@@ -1490,7 +1621,7 @@ mod tests {
         info_data[0] = 3; // vMajor=3
         info_data[2] = 2; // vMinor=2
         info_data[4] = 0x04; // FCRYPTO_API_FLAG
-        // header_size = u32::MAX
+                             // header_size = u32::MAX
         info_data[8] = 0xFF;
         info_data[9] = 0xFF;
         info_data[10] = 0xFF;
@@ -1511,7 +1642,7 @@ mod tests {
         info_data[0] = 3; // vMajor=3
         info_data[2] = 2; // vMinor=2
         info_data[4] = 0x24; // FCRYPTO_API_FLAG | FAES_FLAG
-        // header_size = u32::MAX
+                             // header_size = u32::MAX
         info_data[8] = 0xFF;
         info_data[9] = 0xFF;
         info_data[10] = 0xFF;
@@ -1642,5 +1773,322 @@ mod tests {
             matches!(&result, Err(FileError::UnsupportedEncryption { reason }) if reason.contains("invalid verifier hash size")),
             "expected invalid verifier hash size error, got: {result:?}"
         );
+    }
+
+    // -- AES key size coverage (synthetic roundtrip tests) ---------------------
+
+    #[test]
+    fn aes_cbc_decrypt_192_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes192CbcEnc = cbc::Encryptor<aes::Aes192>;
+
+        let key = [0x42u8; 24];
+        let iv = [0u8; 16];
+        let plaintext = [0xBBu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes192CbcEnc::new(&key.into(), &iv.into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_cbc_decrypt(&key, &iv, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_cbc_decrypt_256_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+
+        let key = [0x42u8; 32];
+        let iv = [0u8; 16];
+        let plaintext = [0xCCu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes256CbcEnc::new(&key.into(), &iv.into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_cbc_decrypt(&key, &iv, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_ecb_decrypt_128_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
+
+        let key = [0x11u8; 16];
+        let plaintext = [0xAAu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes128EcbEnc::new(key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_ecb_decrypt(&key, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_ecb_decrypt_192_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes192EcbEnc = ecb::Encryptor<aes::Aes192>;
+
+        let key = [0x22u8; 24];
+        let plaintext = [0xBBu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes192EcbEnc::new(key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_ecb_decrypt(&key, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    #[test]
+    fn aes_ecb_decrypt_256_roundtrip() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes256EcbEnc = ecb::Encryptor<aes::Aes256>;
+
+        let key = [0x33u8; 32];
+        let plaintext = [0xCCu8; 32];
+
+        let mut buf = plaintext.to_vec();
+        Aes256EcbEnc::new(key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut buf, 32)
+            .unwrap();
+
+        let decrypted = aes_ecb_decrypt(&key, &buf).unwrap();
+        assert_eq!(&decrypted[..32], &plaintext);
+    }
+
+    // -- Page decryption with different key sizes (synthetic) ------------------
+
+    #[test]
+    fn decrypt_page_agile_192() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes192CbcEnc = cbc::Encryptor<aes::Aes192>;
+
+        let db_key = vec![0x55u8; 24]; // AES-192
+        let salt = vec![0xAAu8; 16];
+        let params = AgileParams {
+            key_bits: 192,
+            block_size: 16,
+            hash_algorithm: HashAlgorithm::Sha256,
+            salt_value: salt.clone(),
+            pe_spin_count: 0,
+            pe_salt_value: vec![0u8; 16],
+            pe_hash_algorithm: HashAlgorithm::Sha256,
+            pe_key_bits: 192,
+            pe_block_size: 16,
+            encrypted_verifier_hash_input: vec![0u8; 16],
+            encrypted_verifier_hash_value: vec![0u8; 32],
+            encrypted_key_value: vec![0u8; 32],
+        };
+        let encoding_key: u32 = 0x12345678;
+        let page: u32 = 1;
+
+        // Compute the IV that decrypt_page_agile will use
+        let block_key = page ^ encoding_key;
+        let mut iv_input = Vec::new();
+        iv_input.extend_from_slice(&salt);
+        iv_input.extend_from_slice(&block_key.to_le_bytes());
+        let iv_hash = hash_bytes(HashAlgorithm::Sha256, &iv_input);
+        let iv = make_iv(&iv_hash, 16);
+
+        // Encrypt known plaintext with the same key/IV
+        let plaintext = vec![0xDDu8; 32];
+        let mut encrypted = plaintext.clone();
+        let mut iv16 = [0u8; 16];
+        iv16.copy_from_slice(&iv[..16]);
+        let mut key24 = [0u8; 24];
+        key24.copy_from_slice(&db_key);
+        Aes192CbcEnc::new(&key24.into(), &iv16.into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        // Decrypt and verify
+        decrypt_page_agile(&mut encrypted, &params, &db_key, encoding_key, page).unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_agile_256() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyIvInit};
+        type Aes256CbcEnc = cbc::Encryptor<aes::Aes256>;
+
+        let db_key = vec![0x66u8; 32]; // AES-256
+        let salt = vec![0xBBu8; 16];
+        let params = AgileParams {
+            key_bits: 256,
+            block_size: 16,
+            hash_algorithm: HashAlgorithm::Sha256,
+            salt_value: salt.clone(),
+            pe_spin_count: 0,
+            pe_salt_value: vec![0u8; 16],
+            pe_hash_algorithm: HashAlgorithm::Sha256,
+            pe_key_bits: 256,
+            pe_block_size: 16,
+            encrypted_verifier_hash_input: vec![0u8; 16],
+            encrypted_verifier_hash_value: vec![0u8; 32],
+            encrypted_key_value: vec![0u8; 32],
+        };
+        let encoding_key: u32 = 0xDEADBEEF;
+        let page: u32 = 2;
+
+        let block_key = page ^ encoding_key;
+        let mut iv_input = Vec::new();
+        iv_input.extend_from_slice(&salt);
+        iv_input.extend_from_slice(&block_key.to_le_bytes());
+        let iv_hash = hash_bytes(HashAlgorithm::Sha256, &iv_input);
+        let iv = make_iv(&iv_hash, 16);
+
+        let plaintext = vec![0xEEu8; 32];
+        let mut encrypted = plaintext.clone();
+        let mut iv16 = [0u8; 16];
+        iv16.copy_from_slice(&iv[..16]);
+        let mut key32 = [0u8; 32];
+        key32.copy_from_slice(&db_key);
+        Aes256CbcEnc::new(&key32.into(), &iv16.into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_agile(&mut encrypted, &params, &db_key, encoding_key, page).unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_standard_aes_128() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes128EcbEnc = ecb::Encryptor<aes::Aes128>;
+
+        let iter_hash = hash_bytes(HashAlgorithm::Sha1, b"test_key_material");
+        let encoding_key = [0x11u8; 4];
+        let page: u32 = 1;
+        let key_size: u32 = 128;
+
+        // Derive the key that decrypt_page_standard_aes will use
+        let block_bytes = apply_page_number(&encoding_key, page);
+        let enc_key = derive_standard_aes_key(&iter_hash, &block_bytes, 16);
+
+        let plaintext = vec![0xAAu8; 32];
+        let mut encrypted = plaintext.clone();
+        Aes128EcbEnc::new(enc_key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_standard_aes(&mut encrypted, &iter_hash, &encoding_key, key_size, page)
+            .unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_standard_aes_192() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes192EcbEnc = ecb::Encryptor<aes::Aes192>;
+
+        let iter_hash = hash_bytes(HashAlgorithm::Sha1, b"test_key_192");
+        let encoding_key = [0x22u8; 4];
+        let page: u32 = 3;
+        let key_size: u32 = 192;
+
+        let block_bytes = apply_page_number(&encoding_key, page);
+        let enc_key = derive_standard_aes_key(&iter_hash, &block_bytes, 24);
+
+        let plaintext = vec![0xBBu8; 32];
+        let mut encrypted = plaintext.clone();
+        Aes192EcbEnc::new(enc_key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_standard_aes(&mut encrypted, &iter_hash, &encoding_key, key_size, page)
+            .unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    #[test]
+    fn decrypt_page_standard_aes_256() {
+        use aes::cipher::{block_padding::NoPadding, BlockEncryptMut, KeyInit};
+        type Aes256EcbEnc = ecb::Encryptor<aes::Aes256>;
+
+        let iter_hash = hash_bytes(HashAlgorithm::Sha1, b"test_key_256");
+        let encoding_key = [0x33u8; 4];
+        let page: u32 = 5;
+        let key_size: u32 = 256;
+
+        let block_bytes = apply_page_number(&encoding_key, page);
+        let enc_key = derive_standard_aes_key(&iter_hash, &block_bytes, 32);
+
+        let plaintext = vec![0xCCu8; 32];
+        let mut encrypted = plaintext.clone();
+        Aes256EcbEnc::new(enc_key[..].into())
+            .encrypt_padded_mut::<NoPadding>(&mut encrypted, 32)
+            .unwrap();
+
+        decrypt_page_standard_aes(&mut encrypted, &iter_hash, &encoding_key, key_size, page)
+            .unwrap();
+        assert_eq!(&encrypted, &plaintext);
+    }
+
+    // -- Hash algorithm coverage (SHA384, SHA512) -----------------------------
+
+    #[test]
+    fn hash_bytes_sha384() {
+        let result = hash_bytes(HashAlgorithm::Sha384, b"hello");
+        assert_eq!(result.len(), 48);
+        assert_eq!(
+            hex(&result),
+            "59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f"
+        );
+    }
+
+    #[test]
+    fn hash_bytes_sha512() {
+        let result = hash_bytes(HashAlgorithm::Sha512, b"hello");
+        assert_eq!(result.len(), 64);
+        assert_eq!(
+            hex(&result),
+            "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043"
+        );
+    }
+
+    // -- iterate_hash_sha1 with iterations > 0 --------------------------------
+
+    #[test]
+    fn iterate_hash_sha1_with_iterations() {
+        let base = hash_bytes(HashAlgorithm::Sha1, b"test");
+        let result_0 = iterate_hash_sha1(&base, 0);
+        assert_eq!(
+            result_0, base,
+            "0 iterations should return base_hash unchanged"
+        );
+
+        let result_1 = iterate_hash_sha1(&base, 1);
+        assert_ne!(result_1, base, "1 iteration should differ from base_hash");
+        assert_eq!(result_1.len(), 20, "SHA1 output is always 20 bytes");
+
+        // Deterministic
+        let result_1b = iterate_hash_sha1(&base, 1);
+        assert_eq!(result_1, result_1b);
+
+        // More iterations produce different results
+        let result_10 = iterate_hash_sha1(&base, 10);
+        assert_ne!(result_10, result_1);
+    }
+
+    // -- derive_key with SHA384/SHA512 ----------------------------------------
+
+    #[test]
+    fn derive_key_sha384() {
+        let key = derive_key("pw", &[0u8; 16], 10, &[0xAA; 8], HashAlgorithm::Sha384, 192);
+        assert_eq!(key.len(), 24); // 192 bits / 8
+    }
+
+    #[test]
+    fn derive_key_sha512() {
+        let key = derive_key("pw", &[0u8; 16], 10, &[0xAA; 8], HashAlgorithm::Sha512, 256);
+        assert_eq!(key.len(), 32); // 256 bits / 8
     }
 }

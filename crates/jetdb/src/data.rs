@@ -118,7 +118,9 @@ pub fn read_table_rows(reader: &mut PageReader, table: &TableDef) -> Result<Read
                 Ok(v) => v,
                 Err(e) => {
                     if is_lookup {
-                        log::debug!("skipping stale lookup row on page {page_num} row {row_idx}: {e}");
+                        log::debug!(
+                            "skipping stale lookup row on page {page_num} row {row_idx}: {e}"
+                        );
                     } else {
                         log::debug!("skipping row on page {page_num} row {row_idx}: {e}");
                         skipped_rows += 1;
@@ -573,19 +575,27 @@ fn read_variable_value(
             Value::Int(i16::from_le_bytes([var_data[0], var_data[1]]))
         }
         ColumnType::Long if var_data.len() >= 4 => {
-            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..4].try_into() else {
+                return Value::Null;
+            };
             Value::Long(i32::from_le_bytes(bytes))
         }
         ColumnType::BigInt if var_data.len() >= 8 => {
-            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::BigInt(i64::from_le_bytes(bytes))
         }
         ColumnType::Float if var_data.len() >= 4 => {
-            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..4].try_into() else {
+                return Value::Null;
+            };
             Value::Float(f32::from_le_bytes(bytes))
         }
         ColumnType::Double if var_data.len() >= 8 => {
-            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::Double(f64::from_le_bytes(bytes))
         }
         ColumnType::Money if var_data.len() >= 8 => {
@@ -601,12 +611,16 @@ fn read_variable_value(
             Value::Numeric(money::numeric_to_string(&bytes, col.scale))
         }
         ColumnType::Timestamp if var_data.len() >= 8 => {
-            let Ok(bytes) = var_data[..8].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..8].try_into() else {
+                return Value::Null;
+            };
             Value::Timestamp(f64::from_le_bytes(bytes))
         }
         ColumnType::Guid if var_data.len() >= 16 => Value::Guid(format_guid(&var_data[..16])),
         ColumnType::ComplexType if var_data.len() >= 4 => {
-            let Ok(bytes) = var_data[..4].try_into() else { return Value::Null };
+            let Ok(bytes) = var_data[..4].try_into() else {
+                return Value::Null;
+            };
             Value::Long(i32::from_le_bytes(bytes))
         }
         ColumnType::DateTimeExtended if var_data.len() >= 42 => {
@@ -1293,6 +1307,55 @@ mod tests {
         let result = read_table_rows(&mut reader, &table).unwrap();
         assert_eq!(result.skipped_rows, 0);
         assert_msysobjects_rows(&result.rows, &table);
+    }
+
+    #[test]
+    fn ace17_msysobjects_rows() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let table =
+            crate::table::read_table_def(&mut reader, "MSysObjects", crate::format::CATALOG_PAGE)
+                .unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert_eq!(result.skipped_rows, 0);
+        assert_msysobjects_rows(&result.rows, &table);
+    }
+
+    #[test]
+    fn ace17_datetime_extended() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "Table1")
+            .expect("Table1 entry in catalog");
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert!(!result.rows.is_empty(), "Table1 should have rows");
+
+        // Collect all DateTimeExtended values
+        let ext_values: Vec<&str> = result
+            .rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .filter_map(|v| match v {
+                Value::DateTimeExtended(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            ext_values.iter().any(|v| v.contains("2020-06-17")),
+            "should contain date-only value 2020-06-17, found: {ext_values:?}"
+        );
+        assert!(
+            ext_values
+                .iter()
+                .any(|v| v.contains("2021-06-14 22:45:12.3456789")),
+            "should contain full precision datetime, found: {ext_values:?}"
+        );
     }
 
     // -- LVAL overflow (Memo / OLE) -------------------------------------------
@@ -2036,6 +2099,39 @@ mod tests {
     }
 
     // -- Overflow (LOOKUP_FLAG) rows ------------------------------------------
+
+    #[test]
+    fn japanese_data_values() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "jp_テーブル2")
+            .expect("jp_テーブル2 entry in catalog");
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert!(!result.rows.is_empty(), "jp_テーブル2 should have rows");
+
+        let name_idx = table
+            .columns
+            .iter()
+            .position(|c| c.name == "商品名")
+            .expect("商品名 column");
+        let text_values: Vec<&str> = result
+            .rows
+            .iter()
+            .filter_map(|row| match &row[name_idx] {
+                Value::Text(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            text_values.iter().any(|v| v.contains("商品")),
+            "should contain 商品 in text values, found: {text_values:?}"
+        );
+    }
 
     #[test]
     fn overflow_row_msysaccessstorage() {

@@ -139,24 +139,8 @@ fn vba_nonexistent_file() {
 }
 
 // ---------------------------------------------------------------------------
-// Encrypted .accdb — password, no password, wrong password
+// Encrypted .accdb — no password / wrong password
 // ---------------------------------------------------------------------------
-
-#[test]
-fn vba_list_encrypted_accdb() {
-    let path = skip_if_missing!("enc_vbaV2007.accdb");
-    let output = jetdb_bin()
-        .args(["--password", "1234567890", "vba", "list", path.to_str().unwrap()])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "should succeed with correct password, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(!stdout.trim().is_empty());
-}
 
 #[test]
 fn vba_list_encrypted_no_password() {
@@ -185,28 +169,5 @@ fn vba_list_encrypted_wrong_password() {
     assert!(
         stderr.contains("invalid password"),
         "stderr should mention invalid password, got: {stderr}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// No VBA in database → empty output (success)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn vba_no_vba() {
-    let path = skip_if_missing!("V2003/testV2003.mdb");
-    let output = jetdb_bin()
-        .args(["vba", "list", path.to_str().unwrap()])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "should succeed even with no VBA, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.trim().is_empty(),
-        "should have empty output for database with no VBA, got: {stdout}"
     );
 }

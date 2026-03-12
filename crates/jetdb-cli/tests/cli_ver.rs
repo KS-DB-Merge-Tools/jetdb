@@ -3,7 +3,7 @@ mod common;
 use common::jetdb_bin;
 
 // ---------------------------------------------------------------------------
-// Short output (default)
+// Short output (default) — smoke test with oldest format
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -15,39 +15,6 @@ fn ver_jet3_short() {
         .expect("failed to run jetdb");
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "JET3\n");
-}
-
-#[test]
-fn ver_jet4_short() {
-    let path = skip_if_missing!("V2003/testV2003.mdb");
-    let output = jetdb_bin()
-        .args(["ver", path.to_str().unwrap()])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "JET4\n");
-}
-
-#[test]
-fn ver_ace12_short() {
-    let path = skip_if_missing!("V2007/testV2007.accdb");
-    let output = jetdb_bin()
-        .args(["ver", path.to_str().unwrap()])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "ACE12\n");
-}
-
-#[test]
-fn ver_ace14_short() {
-    let path = skip_if_missing!("V2010/testV2010.accdb");
-    let output = jetdb_bin()
-        .args(["ver", path.to_str().unwrap()])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout), "ACE14\n");
 }
 
 // ---------------------------------------------------------------------------

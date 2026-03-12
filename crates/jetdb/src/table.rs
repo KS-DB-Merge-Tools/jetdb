@@ -663,6 +663,14 @@ mod tests {
     }
 
     #[test]
+    fn ace17_msysobjects() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let tdef = read_table_def(&mut reader, "MSysObjects", CATALOG_PAGE).unwrap();
+        assert_msysobjects(&tdef);
+    }
+
+    #[test]
     fn columns_sorted_by_col_num() {
         let path = skip_if_missing!("V2003/testV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();
@@ -1143,6 +1151,25 @@ mod tests {
         assert_eq!(result[0].flags, 0);
         assert_eq!(result[0].first_data_page, 0);
         assert!(result[0].foreign_key.is_none());
+    }
+
+    #[test]
+    fn japanese_column_names() {
+        let path = skip_if_missing!("formPropTest.accdb");
+        let tdef = assert_user_table_indexes(&path, "jp_テーブル2");
+        let col_names: Vec<&str> = tdef.columns.iter().map(|c| c.name.as_str()).collect();
+        assert!(
+            col_names.contains(&"商品名"),
+            "should contain column 商品名, found: {col_names:?}"
+        );
+        assert!(
+            col_names.contains(&"単価"),
+            "should contain column 単価, found: {col_names:?}"
+        );
+        assert!(
+            col_names.contains(&"個数"),
+            "should contain column 個数, found: {col_names:?}"
+        );
     }
 
     #[test]

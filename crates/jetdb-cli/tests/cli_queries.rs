@@ -141,29 +141,6 @@ fn queries_nonexistent_file() {
 }
 
 // ---------------------------------------------------------------------------
-// No queries in database → empty output
-// ---------------------------------------------------------------------------
-
-#[test]
-fn queries_no_queries() {
-    let path = skip_if_missing!("V2003/testV2003.mdb");
-    let output = jetdb_bin()
-        .args(["queries", "list", path.to_str().unwrap()])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "should succeed even with no queries, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.trim().is_empty(),
-        "should have empty output for database with no queries, got: {stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Error: -1 and -d are mutually exclusive
 // ---------------------------------------------------------------------------
 

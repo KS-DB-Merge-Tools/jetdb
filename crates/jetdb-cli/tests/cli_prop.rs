@@ -20,19 +20,16 @@ fn prop_table1() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // ヘッダが "Object: Table1" であること (C の変更に伴う)
     assert!(
         stdout.contains("Object: Table1"),
         "should contain object header, got:\n{stdout}"
     );
 
-    // Table Properties / Column セクションが出力されること
     assert!(
         stdout.contains("Table Properties:") || stdout.contains("Column:"),
         "should contain property sections, got:\n{stdout}"
     );
 
-    // GUID プロパティが含まれること
     assert!(
         stdout.contains("GUID"),
         "should contain GUID property, got:\n{stdout}"

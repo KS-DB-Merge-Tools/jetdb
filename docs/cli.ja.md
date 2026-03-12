@@ -40,14 +40,15 @@ Jet4 (Access 2000/2003)
 
 #### バージョン一覧
 
-短縮名   詳細
-JET3    Jet3 (Access 97)
-JET4    Jet4 (Access 2000/2003)
-ACE12   ACE12 (Access 2007)
-ACE14   ACE14 (Access 2010)
-ACE15   ACE15 (Access 2013)
-ACE16   ACE16 (Access 2016)
-ACE17   ACE17 (Access 2019)
+| 短縮名 | 詳細 |
+|--------|------|
+| JET3 | Jet3 (Access 97) |
+| JET4 | Jet4 (Access 2000/2003) |
+| ACE12 | ACE12 (Access 2007) |
+| ACE14 | ACE14 (Access 2010) |
+| ACE15 | ACE15 (Access 2013) |
+| ACE16 | ACE16 (Access 2016) |
+| ACE17 | ACE17 (Access 2019) |
 
 ### tables — テーブル一覧の表示
 
@@ -97,9 +98,10 @@ table	Table2
 
 -T で表示される種別名:
 
-名前          条件
-table        通常のユーザーテーブル
-systable     SYSTEM または HIDDEN フラグ付きテーブル
+| 名前 | 条件 |
+|------|------|
+| table | 通常のユーザーテーブル |
+| systable | SYSTEM または HIDDEN フラグ付きテーブル |
 
 ### schema — テーブルスキーマの表示
 
@@ -192,11 +194,12 @@ ALTER TABLE "Table1" ADD CONSTRAINT "Table3Table1"
 
 #### DDL 方言一覧
 
-名前       説明
-sqlite     SQLite
-postgres   PostgreSQL
-mysql      MySQL
-access     Access SQL
+| 名前 | 説明 |
+|------|------|
+| sqlite | SQLite |
+| postgres | PostgreSQL |
+| mysql | MySQL |
+| access | Access SQL |
 
 ### queries — 保存済みクエリの管理
 
@@ -343,6 +346,121 @@ End Function
 ...
 ```
 
+### form — フォーム/レポートの管理
+
+#### form list — フォーム/レポート名の一覧表示
+
+```
+jetdb form list [OPTIONS] <FILE>
+```
+
+データベース内のフォームとレポートの名前を一覧表示する（デフォルトはスペース区切り、アルファベット順）。
+フォーム/レポートがない場合は何も出力しない。
+
+##### オプション
+
+- `-1`, `--newline` — 1行に1つの名前を出力
+- `-d`, `--delimiter <STRING>` — 名前の間の区切り文字（デフォルト: スペース）
+- `--forms-only` — フォームのみ表示
+- `--reports-only` — レポートのみ表示
+
+##### 出力例
+
+```
+$ jetdb form list database.accdb
+F_メニュー F_クライアント一覧 R_月次レポート
+
+$ jetdb form list -1 --forms-only database.accdb
+F_メニュー
+F_クライアント一覧
+
+$ jetdb form list --reports-only database.accdb
+R_月次レポート
+```
+
+#### form dump — バイナリストリームのダンプ
+
+```
+jetdb form dump [OPTIONS] <FILE> <NAME>
+```
+
+フォーム/レポートの生バイナリストリームを標準出力にダンプする。デフォルトは `blob`（デザイン定義本体）。分析用にファイルにリダイレクトして使用する。
+
+##### オプション
+
+- `-s`, `--stream <STREAM>` — ダンプするストリーム（デフォルト: `blob`）
+  - `blob` — デザイン定義本体（レイアウト、コントロール、プロパティ、イベント）
+  - `typeinfo` — コントロール名と型の一覧
+  - `propdata` — プロパティメタデータ（小）
+  - `blobdelta` — 差分データ（通常は空）
+
+##### 出力例
+
+```
+$ jetdb form dump database.accdb F_メニュー > form_blob.bin
+$ xxd form_blob.bin | head
+00000000: 1500 1400 0000 0000 9600 1400 ...
+
+$ jetdb form dump -s typeinfo database.accdb F_メニュー > typeinfo.bin
+```
+
+#### form controls — TypeInfo からコントロール名一覧を表示
+
+```
+jetdb form controls <FILE> <NAME>
+```
+
+TypeInfo ストリームをパースして、フォーム/レポート内の全コントロールを一覧表示する。出力はタブ区切り: 名前、型コード（16進数）、インデックス。
+
+##### 出力例
+
+```
+$ jetdb form controls database.accdb F_クライアント一覧
+フォームヘッダー    FormHeader      0
+詳細                Detail          1
+フォームフッター    FormFooter      2
+Btn_検索            CommandButton   3
+Txt_名前            TextBox         4
+Cmb_ステータス      ComboBox        5
+```
+
+#### form props — フォーム/レポートとコントロールのプロパティ表示
+
+```
+jetdb form props <FILE> <NAME>
+```
+
+Blob バイナリストリームをパースして、フォーム/レポート自体と各コントロールのプロパティを表示する。RecordSource、ControlSource、Filter、Caption、FontName、イベントハンドラ等が含まれる。
+
+既知のプロパティ ID は名前で表示、未知の ID は `0xXXXX` で表示。Binary 値は `(N bytes)`、GUID は `{...}`、Boolean は `yes`/`no` で表示。
+
+##### 出力例
+
+```
+$ jetdb form props database.accdb F_クライアント一覧
+Form: F_クライアント一覧
+
+  Form Properties:
+    RecordSource  SELECT * FROM T_クライアント ORDER BY ID;
+    Filter        ([ID] > 0)
+    Caption       クライアント一覧
+    FontName      ＭＳ Ｐゴシック
+
+  Control: フォームヘッダー (FormHeader)
+    Name    フォームヘッダー
+
+  Control: Txt_名前 (TextBox)
+    Name           Txt_名前
+    ControlSource  名前
+    FontName       Meiryo UI
+
+  Control: Cmb_ステータス (ComboBox)
+    Name           Cmb_ステータス
+    RowSourceType  Table/Query
+    RowSource      SELECT ステータス FROM T_ステータス一覧;
+    FontName       Meiryo UI
+```
+
 ### export — テーブルデータの CSV エクスポート
 
 ```
@@ -383,8 +501,9 @@ A,B,C,D,E,F,G,H,I
 
 #### バイナリ出力モード一覧
 
-名前     説明
-strip    バイナリデータを省略 (空文字列)
-raw      生バイトとして出力 (UTF-8 lossy)
-octal    各バイトを \NNN 形式の8進エスケープ
-hex      各バイトを小文字16進数で連結 (デフォルト)
+| 名前 | 説明 |
+|------|------|
+| strip | バイナリデータを省略 (空文字列) |
+| raw | 生バイトとして出力 (UTF-8 lossy) |
+| octal | 各バイトを \NNN 形式の8進エスケープ |
+| hex | 各バイトを小文字16進数で連結 (デフォルト) |
