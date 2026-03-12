@@ -663,6 +663,14 @@ mod tests {
     }
 
     #[test]
+    fn ace17_msysobjects() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let tdef = read_table_def(&mut reader, "MSysObjects", CATALOG_PAGE).unwrap();
+        assert_msysobjects(&tdef);
+    }
+
+    #[test]
     fn columns_sorted_by_col_num() {
         let path = skip_if_missing!("V2003/testV2003.mdb");
         let mut reader = PageReader::open(&path).unwrap();

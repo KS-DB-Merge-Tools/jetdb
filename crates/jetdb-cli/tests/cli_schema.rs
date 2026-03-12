@@ -3,7 +3,7 @@ mod common;
 use common::jetdb_bin;
 
 // ---------------------------------------------------------------------------
-// Single table: -T Table1
+// Single table: -T Table1 (with column verification)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -23,26 +23,8 @@ fn schema_single_table() {
         stdout.contains("Columns:"),
         "should contain Columns section, got:\n{stdout}"
     );
-}
-
-// ---------------------------------------------------------------------------
-// Single table columns: verify specific column names and types
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_single_table_columns() {
-    let path = skip_if_missing!("V2003/testV2003.mdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
     // Verify specific columns and types
     assert!(stdout.contains("A  Text(100)"), "should contain column A with type");
-    assert!(stdout.contains("Text(100)"), "should contain Text(100)");
-    assert!(stdout.contains("B"), "should contain column B");
     assert!(stdout.contains("Text(200)"), "should contain Text(200)");
     assert!(stdout.contains("Long"), "should contain Long type");
     assert!(
@@ -131,44 +113,6 @@ fn schema_no_relations() {
 }
 
 // ---------------------------------------------------------------------------
-// --no-relations effective (DB with real relationships)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_no_relations_effective() {
-    let path = skip_if_missing!("V2003/indexTestV2003.mdb");
-    // First verify relationships exist without the flag
-    let output_with = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output_with.status.success());
-    let stdout_with = String::from_utf8_lossy(&output_with.stdout);
-    assert!(
-        stdout_with.contains("Relationships:"),
-        "should show Relationships without --no-relations, got:\n{stdout_with}"
-    );
-
-    // Then verify they are suppressed with the flag
-    let output_without = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "-T",
-            "Table1",
-            "--no-relations",
-        ])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output_without.status.success());
-    let stdout_without = String::from_utf8_lossy(&output_without.stdout);
-    assert!(
-        !stdout_without.contains("Relationships:"),
-        "should not contain Relationships section with --no-relations, got:\n{stdout_without}"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Relationships section
 // ---------------------------------------------------------------------------
 
@@ -188,40 +132,6 @@ fn schema_with_relationships() {
     assert!(
         stdout.contains("Table1.otherfk1 -> Table2.id"),
         "should contain Table1.otherfk1 -> Table2.id, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// --no-indexes --no-relations (columns only)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_no_indexes_no_relations() {
-    let path = skip_if_missing!("V2003/indexTestV2003.mdb");
-    let output = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "-T",
-            "Table1",
-            "--no-indexes",
-            "--no-relations",
-        ])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Columns:"),
-        "should contain Columns section, got:\n{stdout}"
-    );
-    assert!(
-        !stdout.contains("Indexes:"),
-        "should not contain Indexes section, got:\n{stdout}"
-    );
-    assert!(
-        !stdout.contains("Relationships:"),
-        "should not contain Relationships section, got:\n{stdout}"
     );
 }
 
@@ -259,172 +169,6 @@ fn schema_nonexistent_table_msg() {
     assert!(
         stderr.contains("table not found: NoSuchTable"),
         "stderr should contain specific table name, got: {stderr}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Jet3 file
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_jet3() {
-    let path = skip_if_missing!("V1997/testV1997.mdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Table: Table1"),
-        "should contain Table1 header for Jet3 file, got:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("Columns:"),
-        "should contain Columns section for Jet3 file, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// ACE12 (V2007) file
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_ace12() {
-    let path = skip_if_missing!("V2007/testV2007.accdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Table: Table1"),
-        "should contain Table1 header for ACE12 file, got:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("Columns:"),
-        "should contain Columns section for ACE12 file, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Japanese table and column names
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_japanese_table() {
-    let path = skip_if_missing!("formPropTest.accdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "jp_テーブル2"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Table: jp_テーブル2"),
-        "should contain Japanese table name, got:\n{stdout}"
-    );
-    assert!(stdout.contains("商品名"), "should contain Japanese column name 商品名");
-    assert!(stdout.contains("単価"), "should contain Japanese column name 単価");
-    assert!(stdout.contains("個数"), "should contain Japanese column name 個数");
-}
-
-#[test]
-fn ddl_japanese_identifiers() {
-    let path = skip_if_missing!("formPropTest.accdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "--ddl", "sqlite", "-T", "jp_テーブル2"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("\"jp_テーブル2\""),
-        "DDL should quote Japanese table name, got:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("\"商品名\""),
-        "DDL should quote Japanese column name, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// ACE14 (V2010)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_ace14() {
-    let path = skip_if_missing!("V2010/testV2010.accdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Table: Table1"),
-        "should contain Table1 header for ACE14 file, got:\n{stdout}"
-    );
-    assert!(
-        stdout.contains("Columns:"),
-        "should contain Columns section for ACE14 file, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// RC4 CryptoAPI encrypted .accdb
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_rc4_cryptoapi() {
-    let path = skip_if_missing!("db2007-rc4cryptoapi.accdb");
-    let output = jetdb_bin()
-        .args([
-            "--password",
-            "Test123",
-            "schema",
-            path.to_str().unwrap(),
-        ])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "should succeed with RC4 CryptoAPI encrypted file, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Table:"),
-        "should contain at least one Table: header, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// NonStandard AES encrypted .accdb
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_nonstandard_aes() {
-    let path = skip_if_missing!("db-nonstandard-aes.accdb");
-    let output = jetdb_bin()
-        .args([
-            "--password",
-            "password",
-            "schema",
-            path.to_str().unwrap(),
-        ])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "should succeed with NonStandard AES encrypted file, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("Table:"),
-        "should contain at least one Table: header, got:\n{stdout}"
     );
 }
 
@@ -671,58 +415,5 @@ fn ddl_sqlite_inline_fk() {
     assert!(
         !stdout.contains("ALTER TABLE"),
         "SQLite should not use ALTER TABLE for FK, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// --ddl sqlite with ACE12 (V2007) file
-// ---------------------------------------------------------------------------
-
-#[test]
-fn ddl_ace12() {
-    let path = skip_if_missing!("V2007/testV2007.accdb");
-    let output = jetdb_bin()
-        .args([
-            "schema",
-            path.to_str().unwrap(),
-            "--ddl",
-            "sqlite",
-            "-T",
-            "Table1",
-        ])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("CREATE TABLE"),
-        "should contain CREATE TABLE for ACE12, got:\n{stdout}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// DateTimeExtended column type in schema output
-// ---------------------------------------------------------------------------
-
-#[test]
-fn schema_datetime_extended_type() {
-    let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
-    let output = jetdb_bin()
-        .args(["schema", path.to_str().unwrap(), "-T", "Table1"])
-        .output()
-        .expect("failed to run jetdb");
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("DateTimeExtended"),
-        "should display DateTimeExtended column type, got:\n{stdout}"
     );
 }

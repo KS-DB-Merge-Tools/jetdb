@@ -1295,6 +1295,53 @@ mod tests {
         assert_msysobjects_rows(&result.rows, &table);
     }
 
+    #[test]
+    fn ace17_msysobjects_rows() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let table =
+            crate::table::read_table_def(&mut reader, "MSysObjects", crate::format::CATALOG_PAGE)
+                .unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert_eq!(result.skipped_rows, 0);
+        assert_msysobjects_rows(&result.rows, &table);
+    }
+
+    #[test]
+    fn ace17_datetime_extended() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let catalog = crate::catalog::read_catalog(&mut reader).unwrap();
+        let entry = catalog
+            .iter()
+            .find(|e| e.name == "Table1")
+            .expect("Table1 entry in catalog");
+        let table =
+            crate::table::read_table_def(&mut reader, &entry.name, entry.table_page).unwrap();
+        let result = read_table_rows(&mut reader, &table).unwrap();
+        assert!(!result.rows.is_empty(), "Table1 should have rows");
+
+        // Collect all DateTimeExtended values
+        let ext_values: Vec<&str> = result
+            .rows
+            .iter()
+            .flat_map(|row| row.iter())
+            .filter_map(|v| match v {
+                Value::DateTimeExtended(s) => Some(s.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            ext_values.iter().any(|v| v.contains("2020-06-17")),
+            "should contain date-only value 2020-06-17, found: {ext_values:?}"
+        );
+        assert!(
+            ext_values.iter().any(|v| v.contains("2021-06-14 22:45:12.3456789")),
+            "should contain full precision datetime, found: {ext_values:?}"
+        );
+    }
+
     // -- LVAL overflow (Memo / OLE) -------------------------------------------
 
     /// Expected long author text in test2 MSP_PROJECTS.

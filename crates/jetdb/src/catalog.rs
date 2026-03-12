@@ -198,6 +198,12 @@ mod tests {
         assert_catalog(&path);
     }
 
+    #[test]
+    fn ace17_read_catalog() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        assert_catalog(&path);
+    }
+
     // -- table_names tests ----------------------------------------------------
 
     fn assert_table_names(path: &std::path::Path) {
@@ -236,6 +242,12 @@ mod tests {
     #[test]
     fn ace14_table_names() {
         let path = skip_if_missing!("V2010/testV2010.accdb");
+        assert_table_names(&path);
+    }
+
+    #[test]
+    fn ace17_table_names() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
         assert_table_names(&path);
     }
 

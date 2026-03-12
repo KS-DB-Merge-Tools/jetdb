@@ -2116,6 +2116,66 @@ mod tests {
     }
 
     #[test]
+    fn read_queries_jet3() {
+        let path = skip_if_missing!("V1997/queryTestV1997.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let queries = read_queries(&mut reader).unwrap();
+        assert!(
+            queries.len() >= 9,
+            "queryTestV1997.mdb should have at least 9 queries, got {}",
+            queries.len()
+        );
+        let names: Vec<&str> = queries.iter().map(|q| q.name.as_str()).collect();
+        assert!(names.contains(&"SelectQuery"), "should contain SelectQuery");
+        assert!(names.contains(&"UnionQuery"), "should contain UnionQuery");
+        for q in &queries {
+            let expected = match q.name.as_str() {
+                "SelectQuery" => QueryType::Select,
+                "DeleteQuery" => QueryType::Delete,
+                "UpdateQuery" => QueryType::Update,
+                "AppendQuery" => QueryType::Append,
+                "MakeTableQuery" => QueryType::MakeTable,
+                "CrosstabQuery" => QueryType::Crosstab,
+                "UnionQuery" => QueryType::Union,
+                "PassthroughQuery" => QueryType::Passthrough,
+                "DataDefinitionQuery" => QueryType::Ddl,
+                other => panic!("unexpected query name: {other}"),
+            };
+            assert_eq!(q.query_type, expected, "type mismatch for {}", q.name);
+        }
+    }
+
+    #[test]
+    fn read_queries_ace14() {
+        let path = skip_if_missing!("V2010/queryTestV2010.accdb");
+        let mut reader = PageReader::open(&path).unwrap();
+        let queries = read_queries(&mut reader).unwrap();
+        assert!(
+            queries.len() >= 9,
+            "queryTestV2010.accdb should have at least 9 queries, got {}",
+            queries.len()
+        );
+        let names: Vec<&str> = queries.iter().map(|q| q.name.as_str()).collect();
+        assert!(names.contains(&"SelectQuery"), "should contain SelectQuery");
+        assert!(names.contains(&"UnionQuery"), "should contain UnionQuery");
+        for q in &queries {
+            let expected = match q.name.as_str() {
+                "SelectQuery" => QueryType::Select,
+                "DeleteQuery" => QueryType::Delete,
+                "UpdateQuery" => QueryType::Update,
+                "AppendQuery" => QueryType::Append,
+                "MakeTableQuery" => QueryType::MakeTable,
+                "CrosstabQuery" => QueryType::Crosstab,
+                "UnionQuery" => QueryType::Union,
+                "PassthroughQuery" => QueryType::Passthrough,
+                "DataDefinitionQuery" => QueryType::Ddl,
+                other => panic!("unexpected query name: {other}"),
+            };
+            assert_eq!(q.query_type, expected, "type mismatch for {}", q.name);
+        }
+    }
+
+    #[test]
     fn read_queries_v2007() {
         let path = skip_if_missing!("V2007/queryTestV2007.accdb");
         let mut reader = PageReader::open(&path).unwrap();

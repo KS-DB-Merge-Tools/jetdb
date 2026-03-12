@@ -785,6 +785,17 @@ mod tests {
         assert!(reader.page_count() > 0);
     }
 
+    // -- ACE17 (V2019) --------------------------------------------------------
+
+    #[test]
+    fn open_ace17_v2019() {
+        let path = skip_if_missing!("V2019/extDateTestV2019.accdb");
+        let reader = PageReader::open(&path).expect("failed to open ACE17 file");
+        assert_eq!(reader.header().version, JetVersion::Ace17);
+        assert_eq!(reader.format().page_size, 4096);
+        assert!(reader.page_count() > 0);
+    }
+
     // -- Edge cases -----------------------------------------------------------
 
     #[test]
