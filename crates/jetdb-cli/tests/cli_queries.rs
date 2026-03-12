@@ -179,3 +179,81 @@ fn queries_newline_delimiter_conflict() {
         "should fail when -1 and -d are both specified"
     );
 }
+
+// ---------------------------------------------------------------------------
+// ACE format (V2007): list queries
+// ---------------------------------------------------------------------------
+
+#[test]
+fn queries_list_v2007() {
+    let path = skip_if_missing!("V2007/queryTestV2007.accdb");
+    let output = jetdb_bin()
+        .args(["queries", "list", "-1", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.len() >= 9,
+        "queryTestV2007.accdb should have at least 9 queries, got {}",
+        lines.len()
+    );
+    assert!(
+        stdout.contains("SelectQuery"),
+        "should contain SelectQuery, got: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ACE format (V2007): show query SQL
+// ---------------------------------------------------------------------------
+
+#[test]
+fn queries_show_sql_v2007() {
+    let path = skip_if_missing!("V2007/queryTestV2007.accdb");
+    let output = jetdb_bin()
+        .args(["queries", "show", path.to_str().unwrap(), "DeleteQuery"])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("DELETE"),
+        "should contain DELETE keyword, got: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// formPropTest.accdb: queries list should return results (regression test)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn queries_list_form_prop_test() {
+    let path = skip_if_missing!("formPropTest.accdb");
+    let output = jetdb_bin()
+        .args(["queries", "list", "-1", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run jetdb");
+    assert!(
+        output.status.success(),
+        "should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    // 3 queries in catalog, but ~sq_fF_Table1 is an embedded query (filtered)
+    assert_eq!(
+        lines.len(),
+        2,
+        "formPropTest.accdb should have 2 user queries, got: {stdout}"
+    );
+}
