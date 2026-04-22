@@ -909,6 +909,36 @@ mod tests {
     }
 
     #[test]
+    fn crack_row_jet4_bogus_var_col_count_does_not_overflow() {
+        // Regression: a row whose `var_col_count` claims more
+        // variable columns than physically fit in the row would
+        // make the backward-walking offset-table loop compute a
+        // `pos` that `wrapping_sub` drove below zero. The old
+        // bounds check `pos + 2 > len` then overflow-panicked in
+        // debug before the comparison could reject the wrapped
+        // value. `checked_add` makes the bounds check itself
+        // panic-safe so the loop just breaks cleanly.
+        //
+        // Forward layout (7 bytes total):
+        //   [0x01, 0x00]        ← col_count = 1
+        //   [0x42, 0x42]        ← 2 bytes of payload
+        //   [0x64, 0x00]        ← var_col_count = 100 (bogus)
+        //   [0xFF]              ← null_mask (1 byte)
+        //
+        // vcc_pos = 4, so the backward walk starts at pos = 2, 0,
+        // then wraps on i=2. Old code panicked; new code must
+        // return Ok with however many valid offsets it read.
+        let row: &[u8] = &[0x01, 0x00, 0x42, 0x42, 0x64, 0x00, 0xFF];
+
+        let cracked = crack_row_jet4(row).expect("must not panic on wrap");
+        assert_eq!(cracked.col_count, 1);
+        assert_eq!(cracked.var_col_count, 100);
+        // Only 2 offsets fit before pos wraps; the loop must break
+        // at that point rather than panic.
+        assert_eq!(cracked.var_offsets.len(), 2);
+    }
+
+    #[test]
     fn crack_row_jet4_no_var_cols() {
         // col_count = 2, no variable columns
         // fixed data: 2 bytes
