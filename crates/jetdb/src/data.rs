@@ -239,8 +239,10 @@ fn crack_row_jet4(row_data: &[u8]) -> Result<CrackedRow<'_>, FileError> {
     let offset_entries = var_col_count as usize + 1;
     let mut var_offsets = Vec::with_capacity(offset_entries);
     for i in 0..offset_entries {
-        let pos = vcc_pos.wrapping_sub(2 + i * 2);
-        if pos + 2 > len {
+        let Some(pos) = vcc_pos.checked_sub(2 + i * 2) else {
+            break;
+        };
+        if pos > len.saturating_sub(2) {
             break;
         }
         var_offsets.push(u16::from_le_bytes([row_data[pos], row_data[pos + 1]]));
@@ -1689,6 +1691,23 @@ mod tests {
         // col_count=8 (need 1 byte null mask + 2 byte var_col_count = 3 tail min)
         // total row must be >= 2 + 3 = 5 bytes, provide only 4
         assert!(crack_row_jet4(&[0x08, 0x00, 0x00, 0x00]).is_err());
+    }
+
+    #[test]
+    fn crack_row_jet4_truncated_offset_table_stops_before_underflow() {
+        // col_count=1, var_col_count=2, but there is room for only one
+        // 2-byte offset entry before var_col_count. Reading the second entry
+        // must stop instead of wrapping the subtraction to a huge index.
+        let row = [
+            0x01, 0x00, // col_count = 1 and first available offset entry
+            0x02, 0x00, // var_col_count = 2
+            0xff, // null mask
+        ];
+
+        let cracked = crack_row_jet4(&row).unwrap();
+
+        assert_eq!(cracked.var_col_count, 2);
+        assert_eq!(cracked.var_offsets, vec![1]);
     }
 
     // -- crack_row_jet3 edge cases -------------------------------------------
