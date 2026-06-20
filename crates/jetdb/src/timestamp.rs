@@ -17,13 +17,17 @@ pub fn timestamp_to_parts(ts: f64) -> (i32, u32, u32, u32, u32, u32) {
     if !ts.is_finite() {
         return (1899, 12, 30, 0, 0, 0); // epoch
     }
-    let days = ts.floor() as i64;
-    let jdn = ACCESS_EPOCH_JDN + days;
+    let mut days = ts.floor() as i64;
+    let frac = (ts - ts.floor()).abs();
+    let mut total_secs = (frac * SECS_PER_DAY + 0.5) as u32; // round
+    if total_secs >= SECS_PER_DAY as u32 {
+        days += 1;
+        total_secs = 0;
+    }
 
+    let jdn = ACCESS_EPOCH_JDN + days;
     let (year, month, day) = jdn_to_gregorian(jdn);
 
-    let frac = (ts - ts.floor()).abs();
-    let total_secs = (frac * SECS_PER_DAY + 0.5) as u32; // round
     let hour = total_secs / 3600;
     let minute = (total_secs % 3600) / 60;
     let second = total_secs % 60;
@@ -242,6 +246,12 @@ mod tests {
         let ts = 37623.5;
         let s = format_timestamp(ts, "%Y-%m-%d %H:%M:%S");
         assert_eq!(s, "2003-01-02 12:00:00");
+    }
+
+    #[test]
+    fn rounded_midnight_carries_to_next_day() {
+        let ts = 2.0 + 86_399.6 / 86_400.0;
+        assert_eq!(timestamp_to_parts(ts), (1900, 1, 2, 0, 0, 0));
     }
 
     #[test]

@@ -239,8 +239,10 @@ fn crack_row_jet4(row_data: &[u8]) -> Result<CrackedRow<'_>, FileError> {
     let offset_entries = var_col_count as usize + 1;
     let mut var_offsets = Vec::with_capacity(offset_entries);
     for i in 0..offset_entries {
-        let pos = vcc_pos.wrapping_sub(2 + i * 2);
-        if pos + 2 > len {
+        let Some(pos) = vcc_pos.checked_sub(2 + i * 2) else {
+            break;
+        };
+        if pos > len.saturating_sub(2) {
             break;
         }
         var_offsets.push(u16::from_le_bytes([row_data[pos], row_data[pos + 1]]));
@@ -555,7 +557,7 @@ fn read_variable_value(
     let start = cracked.var_offsets[var_idx] as usize;
     let end = cracked.var_offsets[var_idx + 1] as usize;
 
-    if start >= end || end > cracked.row_data.len() {
+    if start > end || end > cracked.row_data.len() {
         return Value::Null;
     }
 
@@ -567,7 +569,9 @@ fn read_variable_value(
             Err(_) => Value::Null,
         },
         ColumnType::Binary | ColumnType::Unknown(_) => Value::Binary(var_data.to_vec()),
+        ColumnType::Memo if var_data.is_empty() => Value::Text(String::new()),
         ColumnType::Memo => read_memo_value(var_data, is_jet3, Some(reader)),
+        ColumnType::Ole if var_data.is_empty() => Value::Binary(Vec::new()),
         ColumnType::Ole => read_ole_value(var_data, Some(reader)),
         // Fixed-size types sometimes stored as variable-length (e.g. system tables)
         ColumnType::Byte if !var_data.is_empty() => Value::Byte(var_data[0]),
@@ -754,18 +758,39 @@ fn read_ole_value(var_data: &[u8], reader: Option<&mut PageReader>) -> Value {
 ///
 /// Layout: `[days:19][':'][seconds:12][nanos100:7][':']['7'][0x00]`
 fn parse_ext_datetime(buf: &[u8]) -> Option<String> {
-    if buf.len() < 42 {
+    if buf.len() != 42 {
+        return None;
+    }
+    if buf[19] != b':' || buf[39] != b':' || buf[40] != b'7' || buf[41] != 0x00 {
+        return None;
+    }
+    if !buf[0..19].iter().all(u8::is_ascii_digit)
+        || !buf[20..32].iter().all(u8::is_ascii_digit)
+        || !buf[32..39].iter().all(u8::is_ascii_digit)
+    {
         return None;
     }
     let days_str = std::str::from_utf8(&buf[0..19]).ok()?;
     let secs_str = std::str::from_utf8(&buf[20..32]).ok()?;
     let nanos_str = std::str::from_utf8(&buf[32..39]).ok()?;
 
-    let days: i64 = days_str.trim_start_matches('0').parse().unwrap_or(0);
-    let seconds: i64 = secs_str.trim_start_matches('0').parse().unwrap_or(0);
-    let nanos100: i64 = nanos_str.trim_start_matches('0').parse().unwrap_or(0);
+    let days = parse_zero_padded_i64(days_str)?;
+    let seconds = parse_zero_padded_i64(secs_str)?;
+    let nanos100 = parse_zero_padded_i64(nanos_str)?;
+    if seconds >= 86_400 || nanos100 >= 10_000_000 {
+        return None;
+    }
 
     Some(timestamp::format_ext_datetime(days, seconds, nanos100))
+}
+
+fn parse_zero_padded_i64(s: &str) -> Option<i64> {
+    let trimmed = s.trim_start_matches('0');
+    if trimmed.is_empty() {
+        Some(0)
+    } else {
+        trimmed.parse().ok()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1691,6 +1716,23 @@ mod tests {
         assert!(crack_row_jet4(&[0x08, 0x00, 0x00, 0x00]).is_err());
     }
 
+    #[test]
+    fn crack_row_jet4_truncated_offset_table_stops_before_underflow() {
+        // col_count=1, var_col_count=2, but there is room for only one
+        // 2-byte offset entry before var_col_count. Reading the second entry
+        // must stop instead of wrapping the subtraction to a huge index.
+        let row = [
+            0x01, 0x00, // col_count = 1 and first available offset entry
+            0x02, 0x00, // var_col_count = 2
+            0xff, // null mask
+        ];
+
+        let cracked = crack_row_jet4(&row).unwrap();
+
+        assert_eq!(cracked.var_col_count, 2);
+        assert_eq!(cracked.var_offsets, vec![1]);
+    }
+
     // -- crack_row_jet3 edge cases -------------------------------------------
 
     #[test]
@@ -1758,6 +1800,25 @@ mod tests {
             scale: 0,
             precision: 0,
         }
+    }
+
+    fn make_jet4_row_with_var(var_data: &[u8]) -> Vec<u8> {
+        let mut row_data = vec![0x01, 0x00]; // col_count = 1
+        let start = row_data.len() as u16;
+        row_data.extend_from_slice(var_data);
+        let end = row_data.len() as u16;
+        row_data.extend_from_slice(&end.to_le_bytes());
+        row_data.extend_from_slice(&start.to_le_bytes());
+        row_data.extend_from_slice(&1u16.to_le_bytes()); // var_col_count = 1
+        row_data.push(0xFF); // null_mask
+        row_data
+    }
+
+    fn ext_datetime_bytes(days: i64, seconds: i64, nanos100: i64) -> [u8; 42] {
+        let s = format!("{days:019}:{seconds:012}{nanos100:07}:7\0");
+        let mut buf = [0u8; 42];
+        buf.copy_from_slice(s.as_bytes());
+        buf
     }
 
     #[test]
@@ -1990,6 +2051,66 @@ mod tests {
         );
     }
 
+    #[test]
+    fn read_variable_empty_text_is_not_null() {
+        let row_data = make_jet4_row_with_var(&[]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Text, 255);
+        col.is_fixed = false;
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+
+        assert_eq!(
+            read_variable_value(&cracked, &col, false, &mut reader),
+            Value::Text(String::new())
+        );
+    }
+
+    #[test]
+    fn read_variable_empty_binary_is_not_null() {
+        let row_data = make_jet4_row_with_var(&[]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Binary, 255);
+        col.is_fixed = false;
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+
+        assert_eq!(
+            read_variable_value(&cracked, &col, false, &mut reader),
+            Value::Binary(Vec::new())
+        );
+    }
+
+    #[test]
+    fn read_variable_empty_memo_is_not_null() {
+        let row_data = make_jet4_row_with_var(&[]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Memo, 255);
+        col.is_fixed = false;
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+
+        assert_eq!(
+            read_variable_value(&cracked, &col, false, &mut reader),
+            Value::Text(String::new())
+        );
+    }
+
+    #[test]
+    fn read_variable_empty_ole_is_not_null() {
+        let row_data = make_jet4_row_with_var(&[]);
+        let cracked = crack_row_jet4(&row_data).unwrap();
+        let mut col = make_col_def(ColumnType::Ole, 255);
+        col.is_fixed = false;
+        let path = skip_if_missing!("V2003/testV2003.mdb");
+        let mut reader = PageReader::open(&path).unwrap();
+
+        assert_eq!(
+            read_variable_value(&cracked, &col, false, &mut reader),
+            Value::Binary(Vec::new())
+        );
+    }
+
     // -- read_lval_data edge cases -------------------------------------------
 
     #[test]
@@ -2022,10 +2143,7 @@ mod tests {
     #[test]
     fn parse_ext_datetime_with_time() {
         // days=737954 (2021-06-14), secs=45900 (12:45:00), nanos=0
-        let mut buf = [0u8; 42];
-        let s = b"0000000000000737954:000000045900000000000:7";
-        buf[..42].copy_from_slice(&s[..42]);
-        buf[41] = 0x00;
+        let buf = ext_datetime_bytes(737954, 45900, 0);
         let result = parse_ext_datetime(&buf);
         assert_eq!(result, Some("2021-06-14 12:45:00".to_string()));
     }
@@ -2063,21 +2181,40 @@ mod tests {
 
     #[test]
     fn parse_ext_datetime_non_digit() {
-        // Non-digit ASCII chars → parse fails → unwrap_or(0) → epoch
+        // Non-digit ASCII chars are malformed and should preserve raw bytes.
         let mut buf = [b'x'; 42];
         buf[19] = b':';
         buf[39] = b':';
         buf[40] = b'7';
         buf[41] = 0x00;
-        let result = parse_ext_datetime(&buf);
-        assert!(result.is_some());
-        assert!(result.unwrap().starts_with("0001-01-01"));
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_ext_datetime_bad_separator() {
+        let mut buf = [b'0'; 42];
+        buf[19] = b'-';
+        buf[39] = b':';
+        buf[40] = b'7';
+        buf[41] = 0x00;
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_ext_datetime_seconds_out_of_range() {
+        let buf = ext_datetime_bytes(737954, 86_400, 0);
+        assert_eq!(parse_ext_datetime(&buf), None);
+    }
+
+    #[test]
+    fn parse_zero_padded_i64_all_zeros() {
+        assert_eq!(parse_zero_padded_i64("000000"), Some(0));
     }
 
     #[test]
     fn read_fixed_datetime_extended() {
         // Build a 42-byte ASCII payload for 2020-06-17 (date only)
-        let ascii = b"0000000000000737592:000000000000000000000:7\x00";
+        let ascii = ext_datetime_bytes(737592, 0, 0);
         let row_data = make_jet4_row_with_fixed(&ascii[..42]);
         let cracked = crack_row_jet4(&row_data).unwrap();
         let col = make_col_def(ColumnType::DateTimeExtended, 42);
