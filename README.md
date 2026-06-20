@@ -126,10 +126,19 @@ For detailed API documentation and more examples, run `cargo doc --open` or see 
 
 ## AI Agent Integration
 
-Register as a skill for AI agents like Claude Code:
+Available as a Claude Code Skill via the [agent-skills](https://github.com/dominion525/agent-skills) repository.
+
+Install via Claude Code Plugin Marketplace:
+
+```
+/plugin marketplace add dominion525/agent-skills
+/plugin install jetdb-cli@dominion525-skills
+```
+
+Install via Vercel skills CLI:
 
 ```bash
-mkdir -p ~/.claude/skills/jetdb-cli && jetdb --help-skill > ~/.claude/skills/jetdb-cli/SKILL.md
+npx skills add dominion525/agent-skills --skill jetdb-cli -a claude-code
 ```
 
 ## Acknowledgments

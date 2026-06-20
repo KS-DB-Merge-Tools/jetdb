@@ -126,10 +126,19 @@ fn main() -> Result<(), jetdb::FileError> {
 
 ## AI エージェント連携
 
-Claude Code などの AI エージェントにスキルとして登録できます:
+[agent-skills](https://github.com/dominion525/agent-skills) リポジトリ経由で Claude Code Skill として利用できます。
+
+Plugin Marketplace 経由:
+
+```
+/plugin marketplace add dominion525/agent-skills
+/plugin install jetdb-cli@dominion525-skills
+```
+
+Vercel skills CLI 経由:
 
 ```bash
-mkdir -p ~/.claude/skills/jetdb-cli && jetdb --help-skill > ~/.claude/skills/jetdb-cli/SKILL.md
+npx skills add dominion525/agent-skills --skill jetdb-cli -a claude-code
 ```
 
 ## 謝辞

@@ -29,8 +29,8 @@ struct Cli {
     #[arg(long = "password", global = true)]
     password: Option<String>,
 
-    /// Print SKILL.md for AI agents and exit
-    #[arg(long = "help-skill", visible_alias = "export-skill")]
+    /// Print Claude Code Skill installation instructions and exit
+    #[arg(long = "help-skill")]
     help_skill: bool,
 
     #[command(subcommand)]
@@ -507,7 +507,18 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.help_skill {
-        print!("{}", include_str!("SKILL.md"));
+        println!(
+            "The jetdb Claude Code Skill has moved to the agent-skills repository.
+
+Install via Claude Code Plugin Marketplace:
+  /plugin marketplace add dominion525/agent-skills
+  /plugin install jetdb-cli@dominion525-skills
+
+Install via Vercel skills CLI:
+  npx skills add dominion525/agent-skills --skill jetdb-cli -a claude-code
+
+Details: https://github.com/dominion525/agent-skills"
+        );
         return ExitCode::SUCCESS;
     }
 
